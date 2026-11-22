@@ -28,6 +28,7 @@ function local(path, body) {
     return r;
   }
   if (path === 'pay') return Engine.pay(body.offer, localUser);
+  if (path === 'cancel') return Engine.cancel(body.paid, body.offer, localUser);
 }
 
 function won(n) { return n.toLocaleString() + '원'; }
@@ -125,8 +126,12 @@ function ownerSettled(res, total) {
 }
 
 // ───────── 구매자 흐름 ─────────
-var BUYER_STEPS = ['내 퇴근길과 맡길 범위', '에이전트 추천', '승인 한 번', '픽업'];
-var settings = null; // 사용자가 화면에서 고친 맡긴 범위
+var BUYER_STEPS = ['내 퇴근길과 맡길 범위', '에이전트 추천', '자세히 보고 승인', '픽업과 서비스'];
+var settings = null;   // 사용자가 화면에서 고친 맡긴 범위
+var lastBuyer = null;  // 마지막 추천 결과
+var picks = [];        // 추천 1~3순위
+
+var PENCIL = '<svg viewBox="0 0 24 24" width="16" height="16" aria-hidden="true"><path d="M4 20h4L19 9l-4-4L4 16v4z" fill="none" stroke="currentColor" stroke-width="2" stroke-linejoin="round"/><path d="M13.5 6.5l4 4" stroke="currentColor" stroke-width="2"/></svg>';
 
 function defaultSettings() {
   var u = Engine.freshUser();
@@ -147,10 +152,26 @@ function applySettings(user, st) {
   return user;
 }
 
-// 평소 퇴근길과 가게 위치를 그린 지도 (시연용 약도)
-function mapSvg(ranked) {
+// 퇴근길 위에서 가게와 가장 가까운 지점을 찾습니다 (가게로 빠지는 길 표시용)
+function nearestOnRoute(px, py) {
   var R = Engine.ROUTE;
-  var svg = '<svg viewBox="0 0 600 270" class="map" role="img" aria-label="평소 퇴근길과 마감 상품이 있는 가게 위치">';
+  var best = null;
+  for (var i = 0; i < R.length - 1; i++) {
+    var ax = R[i].x, ay = R[i].y, bx = R[i + 1].x, by = R[i + 1].y;
+    var t = ((px - ax) * (bx - ax) + (py - ay) * (by - ay)) / ((bx - ax) * (bx - ax) + (by - ay) * (by - ay));
+    if (t < 0) t = 0;
+    if (t > 1) t = 1;
+    var x = ax + (bx - ax) * t, y = ay + (by - ay) * t;
+    var d = (px - x) * (px - x) + (py - y) * (py - y);
+    if (!best || d < best.d) best = { x: x, y: y, d: d };
+  }
+  return best;
+}
+
+// 평소 퇴근길과 가게 위치 약도. focusId가 있으면 그 가게로 빠지는 길을 강조합니다
+function mapSvg(ranked, focusId) {
+  var R = Engine.ROUTE;
+  var svg = '<svg viewBox="0 0 600 270" class="map" role="img" aria-label="평소 퇴근길과 가게 위치">';
   svg += '<rect width="600" height="270" fill="#EFE7D6"/>';
   for (var g = 1; g < 6; g++) svg += '<line x1="' + g * 100 + '" y1="0" x2="' + g * 100 + '" y2="270" stroke="#E2D8C3"/>';
   svg += '<polyline points="' + R[0].x + ',' + R[0].y + ' ' + R[1].x + ',' + R[1].y + ' ' + R[2].x + ',' + R[2].y + '" fill="none" stroke="#1F3D2E" stroke-width="6" stroke-linecap="round" stroke-dasharray="2 12"/>';
@@ -160,47 +181,75 @@ function mapSvg(ranked) {
   }
   for (var j = 0; j < Engine.SHOPS.length; j++) {
     var shop = Engine.SHOPS[j];
-    var state = 'none';
+    var color = '#5A564C';
     if (ranked) {
+      var state = 'out';
       for (var k = 0; k < ranked.length; k++) {
-        if (ranked[k].offer.shopId !== shop.id) continue;
-        if (!ranked[k].excluded && ranked[k].rank <= 3) state = 'top';
-        else if (!ranked[k].excluded && state !== 'top') state = 'ok';
-        else if (state === 'none') state = 'out';
+        if (ranked[k].offer.shopId !== shop.id || ranked[k].excluded) continue;
+        if (ranked[k].rank <= 3) state = 'top';
+        else if (state !== 'top') state = 'ok';
+      }
+      color = state === 'top' ? '#E2622B' : (state === 'ok' ? '#2E5642' : '#A9A291');
+    }
+    var opacity = 1;
+    if (focusId) {
+      color = shop.id === focusId ? '#E2622B' : '#A9A291';
+      opacity = shop.id === focusId ? 1 : 0.5;
+      if (shop.id === focusId) {
+        var n = nearestOnRoute(shop.x, shop.y);
+        svg += '<line x1="' + n.x + '" y1="' + n.y + '" x2="' + shop.x + '" y2="' + shop.y + '" stroke="#E2622B" stroke-width="5" stroke-linecap="round"/>';
       }
     }
-    var color = state === 'top' ? '#E2622B' : (state === 'ok' ? '#2E5642' : (state === 'out' ? '#A9A291' : '#5A564C'));
-    svg += '<circle cx="' + shop.x + '" cy="' + shop.y + '" r="11" fill="' + color + '" stroke="#FBF8F1" stroke-width="3"/>';
-    svg += '<text x="' + (shop.x + 16) + '" y="' + (shop.y + 5) + '" font-size="13" fill="#1C1A17">' + shop.name + ' · ' + shop.detourMin + '분</text>';
+    var r = shop.id === focusId ? 15 : 11;
+    svg += '<g opacity="' + opacity + '"><circle cx="' + shop.x + '" cy="' + shop.y + '" r="' + r + '" fill="' + color + '" stroke="#FBF8F1" stroke-width="3"/>';
+    svg += '<text x="' + (shop.x + 18) + '" y="' + (shop.y + 5) + '" font-size="13" font-weight="' + (shop.id === focusId ? 700 : 400) + '" fill="#1C1A17">' + shop.name + ' · ' + shop.detourMin + '분</text></g>';
   }
-  svg += '</svg>';
-  var legend = ranked ? '<p class="small">주황 추천 3순위 안 · 녹색 후보 · 회색 제외 · 숫자는 퇴근길에서 더 걸리는 시간</p>' : '<p class="small">평소 퇴근길 18:20 회사 출발 → 19:05 집 도착 · 숫자는 퇴근길에서 더 걸리는 시간</p>';
-  return svg + legend;
+  return svg + '</svg>';
 }
 
+// ① 내 퇴근길과 맡길 범위 (연필 버튼으로 항목마다 수정)
 function buyerStart() {
   if (!settings) settings = defaultSettings();
   var st = settings;
-  var allergens = ['땅콩', '새우', '우유'];
-  var chk = '';
-  for (var i = 0; i < allergens.length; i++) {
-    chk += '<label><input type="checkbox" name="avoid" value="' + allergens[i] + '"' + (st.avoid.indexOf(allergens[i]) >= 0 ? ' checked' : '') + '> ' + allergens[i] + '</label>';
-  }
   var dataNames = { route: '출퇴근 시간과 동선', search: '검색 기록', buy: '구매 이력', pay: '결제 이력' };
+  var allergens = ['땅콩', '새우', '우유'];
+
+  function editRow(id, label, view, input) {
+    return '<div class="row editable" id="row-' + id + '"><span>' + label + '</span>' +
+      '<span class="val"><b class="view">' + view + '</b><span class="edit" hidden>' + input + '</span>' +
+      '<button type="button" class="pencil" data-edit="' + id + '" aria-label="' + label + ' 수정">' + PENCIL + '</button></span></div>';
+  }
+  var chk = '';
+  for (var i = 0; i < allergens.length; i++) chk += '<label><input type="checkbox" name="avoid" value="' + allergens[i] + '"' + (st.avoid.indexOf(allergens[i]) >= 0 ? ' checked' : '') + '> ' + allergens[i] + '</label>';
   var dchk = '';
+  var dview = [];
   for (var key in dataNames) {
     dchk += '<label><input type="checkbox" name="data" value="' + key + '"' + (st.data[key] ? ' checked' : '') + '> ' + dataNames[key] + '</label>';
+    if (st.data[key]) dview.push(dataNames[key]);
   }
+
   app.innerHTML = steps(BUYER_STEPS, 0) +
-    '<h2>지은 님의 평소 퇴근길</h2>' + mapSvg(null) +
-    '<form id="setForm" class="slip appear" style="margin-top:16px"><h3>에이전트에게 맡긴 범위 · 직접 고칠 수 있어요</h3>' +
-    '<div class="row"><label for="budget">한 번에 결제 한도</label><span><input id="budget" type="number" min="1000" step="500" value="' + st.budgetPerOrder + '"> 원</span></div>' +
-    '<div class="row"><label for="detour">퇴근길에서 돌아가도 되는 시간</label><span><input id="detour" type="number" min="0" max="15" value="' + st.maxDetourMin + '"> 분까지</span></div>' +
-    '<div class="row"><label for="arrive">평소 도착 시간</label><span><input id="arrive" type="time" value="' + st.arriveAt + '"></span></div>' +
-    '<div class="row"><span>못 먹는 재료</span><span class="chips light">' + chk + '</span></div>' +
-    '<div class="row"><span>에이전트가 써도 되는 데이터</span><span class="chips light">' + dchk + '</span></div>' +
+    '<h2>지은 님의 평소 퇴근길</h2>' + mapSvg(null, null) +
+    '<p class="small">18:20 회사 출발 → 지하철역 → 19:05 집 도착 · 출퇴근 동선 데이터로 파악한 경로예요 · 숫자는 퇴근길에서 더 걸리는 시간</p>' +
+    '<form id="setForm" class="slip appear" style="margin-top:16px"><h3>에이전트에게 맡긴 범위 · 연필을 눌러 고칠 수 있어요</h3>' +
+    editRow('budget', '한 번에 결제 한도', won(st.budgetPerOrder), '<input id="budget" type="number" min="1000" step="500" value="' + st.budgetPerOrder + '"> 원') +
+    editRow('detour', '퇴근길에서 돌아가도 되는 시간', st.maxDetourMin + '분까지', '<input id="detour" type="number" min="0" max="15" value="' + st.maxDetourMin + '"> 분') +
+    editRow('arrive', '평소 도착 시간', st.arriveAt, '<input id="arrive" type="time" value="' + st.arriveAt + '">') +
+    editRow('avoid', '못 먹는 재료', st.avoid.length ? st.avoid.join(', ') : '없음', '<span class="chips light">' + chk + '</span>') +
+    editRow('data', '에이전트가 써도 되는 데이터', dview.length ? dview.join(', ') : '사용 안 함', '<span class="chips light">' + dchk + '</span>') +
+    '<div class="row"><span>파악된 식습관</span><b>반찬 90% · 김밥 70% · 빵 60% · 만두 50% · 떡 40%</b></div>' +
     '<p class="small">검색, 구매, 결제 이력을 모두 끄면 식습관을 모르는 상태로 추천해요.</p>' +
     '<button type="submit" class="primary" style="margin-top:10px">이 범위로 18:20 퇴근 시작</button></form>';
+
+  var pens = app.querySelectorAll('[data-edit]');
+  for (var p = 0; p < pens.length; p++) {
+    pens[p].onclick = function () {
+      var row = document.getElementById('row-' + this.getAttribute('data-edit'));
+      row.querySelector('.view').hidden = true;
+      row.querySelector('.edit').hidden = false;
+      this.hidden = true;
+    };
+  }
   document.getElementById('setForm').onsubmit = function (e) {
     e.preventDefault();
     var avoid = [];
@@ -219,54 +268,133 @@ function buyerStart() {
   };
 }
 
+// ② 에이전트 추천 1~3순위
 function buyerRank() {
   api('buyer', { reset: true, now: '18:20', settings: settings }).then(function (res) {
+    lastBuyer = res;
     var rank = 0;
+    picks = [];
     for (var i = 0; i < res.ranked.length; i++) {
-      if (!res.ranked[i].excluded) { rank++; res.ranked[i].rank = rank; }
+      if (!res.ranked[i].excluded) { rank++; res.ranked[i].rank = rank; if (picks.length < 3) picks.push(res.ranked[i]); }
     }
-    var picks = [];
-    for (var k = 0; k < res.ranked.length && picks.length < 3; k++) if (!res.ranked[k].excluded) picks.push(res.ranked[k]);
-
     var html = steps(BUYER_STEPS, 1) + '<h2>오늘 퇴근길 추천 ' + picks.length + '개</h2>' +
-      '<p class="lead">동네 마감 상품 ' + res.offers.length + '개를 맡긴 범위로 거르고, 식습관 40 · 동선 25 · 할인 20 · 단골 15로 점수를 매겼어요. 마음에 드는 걸 골라 승인하세요.</p>' +
-      mapSvg(res.ranked) + '<div class="picks">';
+      '<p class="lead">동네 마감 상품 ' + res.offers.length + '개를 맡긴 범위로 거르고, 식습관 40 · 동선 25 · 할인 20 · 단골 15로 점수를 매겼어요. 순위를 눌러 자세히 보세요.</p>' +
+      mapSvg(res.ranked, null) + '<p class="small">주황 추천 3순위 안 · 녹색 후보 · 회색 제외</p><div class="picks">';
     for (var p = 0; p < picks.length; p++) {
-      var r = picks[p], o = r.offer;
-      var dec = Engine.decide(r, res.user);
-      html += '<div class="dark pick appear"><p class="small">' + (p + 1) + '순위 · ' + o.shopName + ' · 퇴근길에서 ' + o.detourMin + '분 더 · 마감 ' + o.closeAt + '</p>' +
-        '<p style="font-size:19px;font-weight:800;margin:4px 0">' + o.item + '</p>' +
-        '<div><span class="price">' + won(o.sale) + '</span> <span class="was">' + won(o.price) + '</span> <span class="badge">' + r.score + '점</span></div>' +
-        '<ul class="reasons" aria-label="고른 이유">';
-      for (var q = 0; q < r.reasons.length; q++) html += '<li><span>' + r.reasons[q].label + '</span>' + r.reasons[q].text + '<em>+' + r.reasons[q].point + '</em></li>';
-      html += '</ul><p class="small">' + dec.message + '</p><button type="button" class="primary" data-pick="' + p + '">' + won(o.sale) + ' 결제 승인</button></div>';
+      var o = picks[p].offer;
+      html += '<button type="button" class="pickcard appear" data-pick="' + p + '"><span class="small">' + (p + 1) + '순위 · ' + o.shopName + ' · ' + o.detourMin + '분 더</span>' +
+        '<span class="pname">' + o.item + '</span><span><span class="price">' + won(o.sale) + '</span> <span class="was">' + won(o.price) + '</span></span>' +
+        '<span class="badge">' + picks[p].score + '점 · 자세히 보기</span></button>';
     }
     if (picks.length === 0) html += '<p class="lead">맡긴 범위에 맞는 상품이 없어요. 범위를 넓혀 보세요.</p>';
     html += '</div><h3 style="margin-top:24px">제외된 상품과 이유</h3><table><tr><th>가게</th><th>상품</th><th>이유</th></tr>';
     for (var x = 0; x < res.ranked.length; x++) {
       if (res.ranked[x].excluded) html += '<tr class="out"><td>' + res.ranked[x].offer.shopName + '</td><td>' + res.ranked[x].offer.item + '</td><td>' + res.ranked[x].excluded + '</td></tr>';
     }
-    html += '</table><button type="button" class="ghost" id="editBtn">맡긴 범위 다시 고치기</button>';
+    html += '</table><button type="button" class="ghost" id="editBtn">' + PENCIL + ' 맡긴 범위 다시 고치기</button>';
     app.innerHTML = html;
     var btns = app.querySelectorAll('[data-pick]');
-    for (var b = 0; b < btns.length; b++) {
-      btns[b].onclick = function () { buyerPaid(picks[Number(this.getAttribute('data-pick'))].offer); };
-    }
+    for (var b = 0; b < btns.length; b++) btns[b].onclick = function () { buyerDetail(Number(this.getAttribute('data-pick'))); };
     document.getElementById('editBtn').onclick = buyerStart;
   });
 }
 
+// ③ 순위별 상세: 퇴근길 위 가게 위치 + 고른 이유 + 승인
+function buyerDetail(idx) {
+  var r = picks[idx], o = r.offer;
+  var dec = Engine.decide(r, lastBuyer.user);
+  var tabs = '<div class="tabs" role="tablist">';
+  for (var t = 0; t < picks.length; t++) {
+    tabs += '<button type="button" role="tab" class="tab' + (t === idx ? ' on' : '') + '" data-tab="' + t + '" aria-selected="' + (t === idx) + '">' + (t + 1) + '순위 · ' + picks[t].offer.shopName + '</button>';
+  }
+  tabs += '</div>';
+  var html = steps(BUYER_STEPS, 2) + tabs +
+    '<div class="detail"><div>' + mapSvg(null, o.shopId) +
+    '<p class="small">주황 선이 퇴근길에서 ' + o.shopName + '로 빠지는 길이에요 · ' + o.detourMin + '분 더 걸려요</p></div>' +
+    '<div class="dark appear" style="margin:0"><p class="small">18:21 · 지하철에서 받은 알림</p>' +
+    '<p style="font-size:20px;font-weight:800;margin:4px 0">' + o.item + '</p>' +
+    '<p class="small">' + o.shopName + ' · 마감 ' + o.closeAt + ' · 남은 수량 ' + o.left + '개</p>' +
+    '<div><span class="price" style="font-size:28px;font-weight:800">' + won(o.sale) + '</span> <span class="was">' + won(o.price) + '</span> <span class="badge">' + r.score + '점</span></div>' +
+    '<ul class="reasons" aria-label="고른 이유">';
+  for (var q = 0; q < r.reasons.length; q++) html += '<li><span>' + r.reasons[q].label + '</span>' + r.reasons[q].text + '<em>+' + r.reasons[q].point + '</em></li>';
+  html += '</ul><p class="small">' + dec.message + ' · 지갑 잔액 ' + won(lastBuyer.user.wallet) + '</p>' +
+    '<div class="actions"><button type="button" class="primary" id="payBtn">' + won(o.sale) + ' 결제 승인</button>' +
+    '<button type="button" class="ghost" id="backBtn">추천 목록으로</button></div></div></div>';
+  app.innerHTML = html;
+  var tb = app.querySelectorAll('[data-tab]');
+  for (var k = 0; k < tb.length; k++) tb[k].onclick = function () { buyerDetail(Number(this.getAttribute('data-tab'))); };
+  document.getElementById('payBtn').onclick = function () { buyerPaid(o); };
+  document.getElementById('backBtn').onclick = buyerRank;
+}
+
+// ④ 픽업과 서비스: 길찾기, 결제 취소, 환불·문의, 가게 연락, 영수증
 function buyerPaid(offer) {
   api('pay', { offer: offer }).then(function (r) {
-    app.innerHTML = steps(BUYER_STEPS, 3) + '<div class="dark appear">' +
+    var shop = null;
+    for (var i = 0; i < Engine.SHOPS.length; i++) if (Engine.SHOPS[i].id === offer.shopId) shop = Engine.SHOPS[i];
+    app.innerHTML = steps(BUYER_STEPS, 3) +
+      '<div class="detail"><div class="dark appear" style="margin:0">' +
       '<p class="small">결제 완료 · ' + r.settledTo + '</p><h2 style="color:var(--paper)">19:05에 가게 앞에서 보여 주세요</h2>' +
       '<div class="qr" role="img" aria-label="픽업 QR 코드">' + qrSvg() + '</div>' +
-      '<p>픽업 코드 <b>' + r.pickupCode + '</b></p>' +
-      '<p class="small">에이전트 지갑에서 ' + won(r.paid) + ' 결제 · 남은 한도 ' + won(r.walletLeft) + '<br>사장님께 바로 정산 · 단골 포인트 ' + r.points + 'P 적립<br>안 찾아가면 자동 처리, 가게 사정이면 자동 환불</p>' +
-      '<div class="actions" style="max-width:360px"><button type="button" class="ghost" id="toOwner">사장님 쪽도 보기</button><button type="button" class="primary" id="homeAgain">처음으로</button></div></div>';
+      '<p>픽업 코드 <b>' + r.pickupCode + '</b> · ' + offer.item + '</p>' +
+      '<p class="small">에이전트 지갑에서 ' + won(r.paid) + ' 결제 · 남은 한도 ' + won(r.walletLeft) + '<br>사장님께 바로 정산 · 단골 포인트 ' + r.points + 'P 적립<br>안 찾아가면 자동 처리, 가게 사정이면 자동 환불</p></div>' +
+      '<div><div class="services">' +
+      '<button type="button" class="svc" data-svc="route">길찾기</button>' +
+      '<button type="button" class="svc" data-svc="time">픽업 시간 변경</button>' +
+      '<button type="button" class="svc" data-svc="call">가게 연락처</button>' +
+      '<button type="button" class="svc" data-svc="receipt">영수증 보기</button>' +
+      '<button type="button" class="svc" data-svc="cancel">결제 취소</button>' +
+      '<button type="button" class="svc" data-svc="ask">환불 · 문의</button>' +
+      '</div><div id="svcPanel" class="slip" aria-live="polite">' + routePanel(shop, offer) + '</div></div></div>' +
+      '<div class="actions" style="max-width:360px;margin-top:18px"><button type="button" class="ghost" id="toOwner">사장님 쪽도 보기</button><button type="button" class="primary" id="homeAgain">처음으로</button></div>';
+
+    var panel = document.getElementById('svcPanel');
+    var cancelled = false;
+    var svcs = app.querySelectorAll('[data-svc]');
+    for (var s = 0; s < svcs.length; s++) {
+      svcs[s].onclick = function () {
+        var k = this.getAttribute('data-svc');
+        if (k === 'route') panel.innerHTML = routePanel(shop, offer);
+        if (k === 'time') {
+          panel.innerHTML = '<h3>픽업 시간 변경</h3><p class="small">가게 마감 ' + offer.closeAt + ' 전까지 바꿀 수 있어요.</p>' +
+            '<div class="row"><label for="newTime">새 픽업 시간</label><input id="newTime" type="time" value="19:05" max="' + offer.closeAt + '"></div>' +
+            '<button type="button" class="primary" id="saveTime">사장님께 변경 요청</button>';
+          document.getElementById('saveTime').onclick = function () {
+            panel.innerHTML += '<p class="done-msg">' + document.getElementById('newTime').value + '로 변경 요청을 보냈어요. 사장님 에이전트가 확인하면 알려 드릴게요.</p>';
+            this.disabled = true;
+          };
+        }
+        if (k === 'call') panel.innerHTML = '<h3>' + offer.shopName + '</h3><div class="row"><span>전화번호</span><b>02-000-0000 시연용</b></div><div class="row"><span>마감 시간</span><b>' + offer.closeAt + '</b></div><div class="row"><span>위치</span><b>퇴근길에서 ' + offer.detourMin + '분</b></div>';
+        if (k === 'receipt') panel.innerHTML = '<h3>영수증</h3><div class="row"><span>' + offer.item + '</span><b>' + won(offer.price) + '</b></div><div class="row"><span>마감 할인</span><b>-' + won(offer.price - offer.sale) + '</b></div><div class="row"><span>결제 수단</span><b>에이전트 지갑</b></div><div class="row"><span>결제 금액</span><b>' + won(r.paid) + '</b></div><div class="row"><span>적립 포인트</span><b>' + r.points + 'P</b></div>';
+        if (k === 'cancel') {
+          if (cancelled) { panel.innerHTML = '<h3>결제 취소</h3><p>이미 취소된 주문이에요.</p>'; return; }
+          panel.innerHTML = '<h3>결제 취소</h3><p class="small">픽업 전이라 바로 취소할 수 있어요. 금액은 에이전트 지갑으로 즉시 돌아가고, 상품은 다른 손님에게 다시 제안돼요.</p><button type="button" class="primary" id="doCancel">' + won(r.paid) + ' 결제 취소</button>';
+          document.getElementById('doCancel').onclick = function () {
+            var c = local('cancel', { paid: r.paid, offer: offer });
+            cancelled = true;
+            panel.innerHTML = '<h3>취소 완료</h3><p class="done-msg">' + won(c.refunded) + '을 에이전트 지갑으로 돌려받았어요. 남은 한도 ' + won(c.walletLeft) + '</p>';
+          };
+        }
+        if (k === 'ask') {
+          panel.innerHTML = '<h3>환불 · 문의</h3><div class="row"><label for="askType">유형</label><select id="askType"><option>상품 상태가 이상해요</option><option>가게가 문을 닫았어요</option><option>수량이 달라요</option><option>기타 문의</option></select></div>' +
+            '<label for="askText" class="small">내용</label><textarea id="askText" rows="3" placeholder="예: 픽업했는데 계란말이가 빠져 있었어요"></textarea>' +
+            '<button type="button" class="primary" id="sendAsk">문의 접수</button>';
+          document.getElementById('sendAsk').onclick = function () {
+            panel.innerHTML = '<h3>접수됐어요</h3><p class="done-msg">' + document.getElementById('askType').value + ' 문의가 접수됐어요. 가게 사정으로 판매가 어려운 경우는 결제 조건에 따라 자동 환불돼요.</p>';
+          };
+        }
+      };
+    }
     document.getElementById('toOwner').onclick = ownerStart;
     document.getElementById('homeAgain').onclick = home;
   });
+}
+
+// 길찾기 안내 (시연용 약도와 단계 안내)
+function routePanel(shop, offer) {
+  return '<h3>길찾기</h3>' + mapSvg(null, shop.id) +
+    '<ol class="route-steps"><li>18:20 회사에서 출발</li><li>지하철역 근처에서 퇴근길을 벗어나 ' + offer.shopName + '로 · ' + offer.detourMin + '분</li><li>가게 앞에서 픽업 QR 보여 주기</li><li>다시 퇴근길로 돌아와 19:05쯤 집 도착</li></ol>' +
+    '<p class="small">실제 서비스에서는 지도 앱 길안내와 연결됩니다.</p>';
 }
 
 // 픽업 QR 모양 (시연용 무늬, 실제로 스캔되지 않습니다)

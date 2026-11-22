@@ -38,7 +38,7 @@
       floorRate: 0.5
     },
     {
-      id: 'tteok', name: '할머니 떡집', type: '떡', closeAt: '19:40', detourMin: 4, x: 470, y: 60,
+      id: 'tteok', name: '할머니 떡집', type: '떡', closeAt: '19:40', detourMin: 4, x: 420, y: 55,
       items: [
         { name: '인절미 한 팩', price: 5000, left: 3, allergens: [] }
       ],
@@ -173,6 +173,13 @@
     };
   }
 
+  // 픽업 전 결제 취소: 지갑으로 바로 돌려받습니다
+  function cancel(paid, offer, user) {
+    user.wallet = user.wallet + paid;
+    if (user.visits[offer.shopId] > 0) user.visits[offer.shopId] = user.visits[offer.shopId] - 1;
+    return { ok: true, refunded: paid, walletLeft: user.wallet };
+  }
+
   function hasAny(list, avoid) {
     for (var i = 0; i < list.length; i++) {
       if (avoid.indexOf(list[i]) >= 0) return true;
@@ -221,7 +228,7 @@
   // 데모를 처음 상태로 돌리기 위한 복사본
   function freshUser() { return JSON.parse(JSON.stringify(USER)); }
 
-  var api = { ROUTE: ROUTE, SHOPS: SHOPS, BUYERS: BUYERS, sellerFlow: sellerFlow, buyerFlow: buyerFlow, freshUser: freshUser, WEIGHTS: WEIGHTS, priceOffers: priceOffers, rankOffers: rankOffers, decide: decide, pay: pay };
+  var api = { cancel: cancel, ROUTE: ROUTE, SHOPS: SHOPS, BUYERS: BUYERS, sellerFlow: sellerFlow, buyerFlow: buyerFlow, freshUser: freshUser, WEIGHTS: WEIGHTS, priceOffers: priceOffers, rankOffers: rankOffers, decide: decide, pay: pay };
 
   if (typeof module !== 'undefined' && module.exports) module.exports = api; // Node
   else root.Engine = api;                                                     // 브라우저
