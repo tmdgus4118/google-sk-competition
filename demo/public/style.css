@@ -134,3 +134,25 @@ select, textarea { font: inherit; padding: 8px; border: 1px solid var(--line); b
 .leaflet-tooltip.tip-focus { background: var(--orange); color: var(--ink); font-weight: 700; border-color: var(--orange); }
 .leaflet-tooltip.tip-route { background: var(--green); color: var(--paper); border-color: var(--green); font-weight: 700; }
 @media (max-width: 720px) { .lmap { height: 260px; } }
+
+.shop-head { display: flex; justify-content: space-between; align-items: flex-start; gap: 12px; margin: 0 0 12px; }
+.tab .count { background: var(--orange); color: var(--ink); border-radius: 999px; padding: 1px 7px; font-size: 12px; margin-left: 4px; }
+.row .val { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; justify-content: flex-end; }
+.del { background: transparent; border: 1px solid var(--line); color: var(--soft); padding: 5px 9px; font-size: 13px; border-radius: 8px; }
+.sm { padding: 8px 12px; font-size: 14px; }
+.editrow input, .addrow input { font: inherit; width: 100px; padding: 6px 8px; border: 1px solid var(--line); border-radius: 6px; background: #FFFDF8; margin-left: 4px; }
+.addrow { display: flex; flex-wrap: wrap; gap: 10px; align-items: center; }
+.addrow input#aName { width: 180px; }
+.orders { display: grid; gap: 12px; }
+.order { background: #FBF8F1; border: 1px solid var(--line); border-left: 6px solid var(--orange); border-radius: 10px; padding: 14px 16px; }
+.order.done { border-left-color: var(--green); }
+.order.cancel { border-left-color: #A9A291; opacity: 0.8; }
+.order p { margin: 6px 0; }
+.ohead { display: flex; justify-content: space-between; gap: 8px; flex-wrap: wrap; }
+.status { font-size: 13px; background: var(--paper2); padding: 3px 9px; border-radius: 999px; }
+.oact { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 6px; }
+.danger { color: #9A3A12; border-color: #E2B8A4; }
+.kpis { display: grid; grid-template-columns: repeat(4, 1fr); gap: 10px; margin: 0 0 16px; }
+.kpis div { background: #FBF8F1; border: 1px solid var(--line); border-radius: 10px; padding: 14px; display: flex; flex-direction: column; gap: 4px; }
+.kpis b { font-size: 20px; font-variant-numeric: tabular-nums; }
+@media (max-width: 720px) { .kpis { grid-template-columns: repeat(2, 1fr); } .editrow input, .addrow input { width: 84px; } .addrow input#aName { width: 100%; } }

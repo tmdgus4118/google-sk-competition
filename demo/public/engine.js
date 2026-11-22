@@ -99,6 +99,7 @@
       var sale = Math.round(item.price * (1 - r) / 100) * 100;
       var floor = Math.round(item.price * shop.floorRate / 100) * 100;
       if (sale < floor) sale = floor; // 사장님이 정한 최저가 아래로는 안 내려갑니다
+      if (item.manualSale) sale = item.manualSale; // 사장님이 직접 정한 가격이 있으면 그 가격
       offers.push({
         shopId: shop.id, shopName: shop.name, type: shop.type, closeAt: shop.closeAt,
         detourMin: shop.detourMin, item: item.name, allergens: item.allergens,
@@ -190,7 +191,8 @@
   // 사장님 흐름: 한 가게의 마감 상품을 내보내면 손님 에이전트들이 각자 골라 예약합니다
   function sellerFlow(shopId, now) {
     var shop = null;
-    for (var i = 0; i < SHOPS.length; i++) if (SHOPS[i].id === shopId) shop = SHOPS[i];
+    if (typeof shopId === 'object') shop = shopId; // 사장님이 고친 가게 정보를 그대로 받을 때
+    for (var i = 0; i < SHOPS.length && !shop; i++) if (SHOPS[i].id === shopId) shop = SHOPS[i];
     var offers = priceOffers(shop, now);
     var left = {};
     for (var j = 0; j < offers.length; j++) left[offers[j].item] = offers[j].left;

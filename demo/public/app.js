@@ -26,7 +26,7 @@ function api(path, body) {
 }
 
 function local(path, body) {
-  if (path === 'seller') return Engine.sellerFlow(body.shopId, body.now);
+  if (path === 'seller') return Engine.sellerFlow(body.shop || body.shopId, body.now);
   if (path === 'buyer') {
     if (body.reset) localUser = Engine.freshUser();
     if (body.settings) applySettings(localUser, body.settings);
@@ -63,10 +63,11 @@ function home() {
 }
 
 // ───────── 사장님 흐름 ─────────
-var OWNER_STEPS = ['가게 고르기', '남은 거 팔아줘', '손님 에이전트 예약', '바로 정산'];
+// 가게를 고르면 상품 · 주문 · 정산 · 가게 설정 네 탭으로 된 사장님 화면이 열립니다
+var seller = null; // 사장님 화면 상태
 
 function ownerStart() {
-  var html = steps(OWNER_STEPS, 0) + '<h2>어느 가게 사장님인가요?</h2><p class="lead">지금은 18:10, 마감 전입니다.</p><div class="roles">';
+  var html = '<h2>어느 가게 사장님인가요?</h2><p class="lead">지금은 18:10, 마감 전입니다. 시연용 가게예요.</p><div class="roles">';
   for (var i = 0; i < Engine.SHOPS.length; i++) {
     var s = Engine.SHOPS[i];
     var names = [];
@@ -75,61 +76,226 @@ function ownerStart() {
   }
   app.innerHTML = html + '</div>';
   var btns = app.querySelectorAll('[data-shop]');
-  for (var k = 0; k < btns.length; k++) {
-    btns[k].onclick = function () { ownerSell(this.getAttribute('data-shop')); };
-  }
+  for (var k = 0; k < btns.length; k++) btns[k].onclick = function () { ownerOpen(this.getAttribute('data-shop')); };
 }
 
-function ownerSell(shopId) {
-  api('seller', { shopId: shopId, now: '18:10' }).then(function (res) {
-    var shop = res.shop;
-    var names = [];
-    for (var i = 0; i < shop.items.length; i++) names.push(shop.items[i].name + ' ' + shop.items[i].left + '개');
-    var html = steps(OWNER_STEPS, 1) + '<h2>' + shop.name + '</h2>' +
-      '<p class="say appear">남은 거 팔아줘. ' + names.join(', ') + ' 남았어</p>' +
-      '<div class="slip appear"><h3>판매자 에이전트가 정한 마감 가격</h3>';
-    for (var j = 0; j < res.offers.length; j++) {
-      var o = res.offers[j];
-      html += '<div class="row"><span>' + o.item + ' · ' + o.left + '개</span><span><span class="old">' + won(o.price) + '</span><b>' + won(o.sale) + '</b></span></div>';
+function ownerOpen(shopId) {
+  var shop = null;
+  for (var i = 0; i < Engine.SHOPS.length; i++) if (Engine.SHOPS[i].id === shopId) shop = JSON.parse(JSON.stringify(Engine.SHOPS[i]));
+  seller = { shop: shop, offers: Engine.priceOffers(shop, '18:10'), orders: [], log: [], tab: 'items', editing: '', open: true, autoSend: true, orderNo: 100 };
+  ownerDash();
+}
+
+function recalc() { seller.offers = Engine.priceOffers(seller.shop, '18:10'); }
+
+function ownerDash() {
+  var tabs = [['items', '상품 관리'], ['orders', '주문 관리'], ['settle', '매출 · 정산'], ['setting', '가게 설정']];
+  var waiting = 0;
+  for (var i = 0; i < seller.orders.length; i++) if (seller.orders[i].status === '결제 완료') waiting++;
+  var html = '<div class="shop-head"><div><h2>' + seller.shop.name + '</h2><p class="small">' + seller.shop.type + ' · 오늘 마감 ' + seller.shop.closeAt + ' · ' + (seller.open ? '영업 중' : '오늘 판매 중지') + '</p></div>' +
+    '<button type="button" class="ghost" id="otherShop">다른 가게</button></div><div class="tabs" role="tablist">';
+  for (var t = 0; t < tabs.length; t++) {
+    var badge = tabs[t][0] === 'orders' && waiting ? ' <span class="count">' + waiting + '</span>' : '';
+    html += '<button type="button" role="tab" class="tab' + (seller.tab === tabs[t][0] ? ' on' : '') + '" data-tab="' + tabs[t][0] + '">' + tabs[t][1] + badge + '</button>';
+  }
+  html += '</div><div id="tabBody"></div>';
+  app.innerHTML = html;
+  var tb = app.querySelectorAll('[data-tab]');
+  for (var k = 0; k < tb.length; k++) tb[k].onclick = function () { seller.tab = this.getAttribute('data-tab'); seller.editing = ''; ownerDash(); };
+  document.getElementById('otherShop').onclick = ownerStart;
+  if (seller.tab === 'items') ownerItems();
+  if (seller.tab === 'orders') ownerOrders();
+  if (seller.tab === 'settle') ownerSettle();
+  if (seller.tab === 'setting') ownerSetting();
+}
+
+// ① 상품 관리: 수량 · 마감가 수정, 삭제, 추가, 내보내기
+function ownerItems() {
+  var body = document.getElementById('tabBody');
+  var names = [];
+  for (var i = 0; i < seller.shop.items.length; i++) names.push(seller.shop.items[i].name + ' ' + seller.shop.items[i].left + '개');
+  var html = '<p class="say appear">남은 거 팔아줘. ' + (names.length ? names.join(', ') + ' 남았어' : '오늘은 다 팔렸어') + '</p>' +
+    '<div class="slip appear"><h3>판매자 에이전트가 정한 마감 가격 · 연필을 눌러 직접 고칠 수 있어요</h3>';
+  for (var j = 0; j < seller.offers.length; j++) {
+    var o = seller.offers[j];
+    var item = seller.shop.items[j];
+    if (seller.editing === String(j)) {
+      html += '<div class="row editrow"><b>' + o.item + '</b><span class="val">' +
+        '<label>수량 <input id="eLeft" type="number" min="0" value="' + item.left + '"></label>' +
+        '<label>마감가 <input id="eSale" type="number" min="0" step="100" value="' + o.sale + '"></label>' +
+        '<button type="button" class="primary sm" id="eSave">저장</button><button type="button" class="ghost sm" id="eCancel">취소</button></span></div>';
+    } else {
+      html += '<div class="row"><span>' + o.item + ' · ' + item.left + '개' + (item.manualSale ? ' <span class="badge">직접 정한 가격</span>' : '') + '</span>' +
+        '<span class="val"><span class="old">' + won(o.price) + '</span><b>' + won(o.sale) + '</b>' +
+        '<button type="button" class="pencil" data-edit="' + j + '" aria-label="' + o.item + ' 수정">' + PENCIL + '</button>' +
+        '<button type="button" class="del" data-del="' + j + '" aria-label="' + o.item + ' 삭제">삭제</button></span></div>';
     }
-    html += '<p class="small">마감 ' + shop.closeAt + '까지 남은 시간과 남은 수량으로 할인율을 정했고, 정가의 ' + Math.round(shop.floorRate * 100) + '% 아래로는 내리지 않아요.</p></div>' +
-      '<button type="button" class="primary" id="sendBtn">이 가격으로 근처 손님 에이전트에게 내보내기</button>';
-    app.innerHTML = html;
-    document.getElementById('sendBtn').onclick = function () { ownerMatched(res); };
+  }
+  if (seller.offers.length === 0) html += '<p>등록된 상품이 없어요. 아래에서 추가해 주세요.</p>';
+  html += '<p class="small">마감 ' + seller.shop.closeAt + '까지 남은 시간과 수량으로 할인율을 정했고, 정가의 ' + Math.round(seller.shop.floorRate * 100) + '% 아래로는 내리지 않아요. 최저가 비율은 가게 설정에서 바꿀 수 있어요.</p></div>' +
+    '<form id="addForm" class="slip"><h3>상품 추가</h3><div class="addrow">' +
+    '<label>상품명 <input id="aName" type="text" placeholder="예: 김치전 2장" required></label>' +
+    '<label>정가 <input id="aPrice" type="number" min="500" step="100" placeholder="7000" required></label>' +
+    '<label>수량 <input id="aLeft" type="number" min="1" value="1" required></label>' +
+    '<button type="submit" class="ghost">추가</button></div></form>' +
+    '<button type="button" class="primary" id="sendBtn"' + (seller.open && seller.offers.length ? '' : ' disabled') + '>이 가격으로 근처 손님 에이전트에게 내보내기</button>' +
+    (seller.open ? '' : '<p class="small">오늘 판매 중지 상태예요. 가게 설정에서 다시 켤 수 있어요.</p>');
+  body.innerHTML = html;
+
+  var pens = body.querySelectorAll('[data-edit]');
+  for (var p = 0; p < pens.length; p++) pens[p].onclick = function () { seller.editing = this.getAttribute('data-edit'); ownerItems(); };
+  var dels = body.querySelectorAll('[data-del]');
+  for (var d = 0; d < dels.length; d++) dels[d].onclick = function () {
+    var idx = Number(this.getAttribute('data-del'));
+    seller.log.push('상품 삭제 · ' + seller.shop.items[idx].name);
+    seller.shop.items.splice(idx, 1); recalc(); ownerItems();
+  };
+  if (document.getElementById('eSave')) {
+    document.getElementById('eSave').onclick = function () {
+      var idx = Number(seller.editing);
+      seller.shop.items[idx].left = Number(document.getElementById('eLeft').value) || 0;
+      var sale = Number(document.getElementById('eSale').value) || 0;
+      if (sale !== seller.offers[idx].sale) seller.shop.items[idx].manualSale = sale;
+      seller.log.push('상품 수정 · ' + seller.shop.items[idx].name);
+      seller.editing = ''; recalc(); ownerItems();
+    };
+    document.getElementById('eCancel').onclick = function () { seller.editing = ''; ownerItems(); };
+  }
+  document.getElementById('addForm').onsubmit = function (e) {
+    e.preventDefault();
+    seller.shop.items.push({ name: document.getElementById('aName').value, price: Number(document.getElementById('aPrice').value), left: Number(document.getElementById('aLeft').value), allergens: [] });
+    seller.log.push('상품 추가 · ' + document.getElementById('aName').value);
+    recalc(); ownerItems();
+  };
+  document.getElementById('sendBtn').onclick = ownerSend;
+}
+
+// 내보내기: 손님 에이전트들이 골라 주문이 들어옵니다
+function ownerSend() {
+  api('seller', { shop: seller.shop, now: '18:10' }).then(function (res) {
+    var count = 0;
+    for (var i = 0; i < res.reservations.length; i++) {
+      var r = res.reservations[i];
+      for (var k = 0; k < seller.shop.items.length; k++) {
+        if (seller.shop.items[k].name === r.item && seller.shop.items[k].left > 0) {
+          seller.shop.items[k].left--;
+          seller.orderNo++;
+          seller.orders.push({ no: 'A' + seller.orderNo, buyer: r.buyer, item: r.item, sale: r.sale, score: r.score,
+            status: r.decision.mode === 'one_tap' ? '결제 완료' : '손님 확인 중', pickup: '19:05' });
+          count++;
+          break;
+        }
+      }
+    }
+    seller.log.push('내보내기 · 주문 ' + count + '건 들어옴');
+    recalc();
+    seller.tab = 'orders';
+    ownerDash();
   });
 }
 
-function ownerMatched(res) {
-  var html = steps(OWNER_STEPS, 2) + '<h2>손님 에이전트들이 골랐어요</h2>' +
-    '<p class="lead">각 손님의 식습관, 동선, 한도에 맞을 때만 예약합니다. 처음 오는 손님은 본인에게 한 번 더 확인해요.</p>' +
-    '<table><tr><th>손님 에이전트</th><th>예약 상품</th><th>가격</th><th>점수</th><th>결제 방식</th></tr>';
-  var total = 0;
-  for (var i = 0; i < res.reservations.length; i++) {
-    var r = res.reservations[i];
-    total += r.sale;
-    html += '<tr class="appear"><td>' + r.buyer + ' 님</td><td>' + r.item + '</td><td>' + won(r.sale) + '</td><td class="score">' + r.score + '</td><td>' + (r.decision.mode === 'one_tap' ? '승인 한 번' : '본인 확인 후') + '</td></tr>';
+// ② 주문 관리: 수락 · 거절 · 픽업 완료 · 주문 취소 · 노쇼 처리
+function ownerOrders() {
+  var body = document.getElementById('tabBody');
+  if (seller.orders.length === 0) {
+    body.innerHTML = '<p class="lead">아직 들어온 주문이 없어요. 상품 관리에서 내보내기를 눌러 보세요.</p>';
+    return;
   }
-  if (res.reservations.length === 0) html += '<tr><td colspan="5">조건에 맞는 손님이 없어 가격을 조금 더 낮춰 다시 제안해요</td></tr>';
-  html += '</table><button type="button" class="primary" id="settleBtn">손님 승인 받기</button>';
-  app.innerHTML = html;
-  document.getElementById('settleBtn').onclick = function () { ownerSettled(res, total); };
+  var html = '<p class="lead">손님 에이전트가 식습관, 동선, 한도에 맞을 때만 주문해요. 처음 오는 손님은 본인 확인 후 결제돼요.</p><div class="orders">';
+  for (var i = 0; i < seller.orders.length; i++) {
+    var o = seller.orders[i];
+    var cls = o.status === '취소 · 환불' ? ' cancel' : (o.status === '픽업 완료' ? ' done' : '');
+    html += '<div class="order' + cls + ' appear"><div class="ohead"><b>' + o.no + ' · ' + o.buyer + ' 님</b><span class="status">' + o.status + '</span></div>' +
+      '<p>' + o.item + ' · ' + won(o.sale) + ' · 에이전트 점수 ' + o.score + ' · 픽업 ' + o.pickup + '</p><div class="oact">';
+    if (o.status === '손님 확인 중') {
+      html += '<button type="button" class="ghost sm" data-act="approve" data-i="' + i + '">손님 승인 도착 · 시연</button>' +
+        '<button type="button" class="ghost sm" data-act="reject" data-i="' + i + '">주문 거절</button>';
+    }
+    if (o.status === '결제 완료') {
+      html += '<button type="button" class="primary sm" data-act="pickup" data-i="' + i + '">픽업 완료</button>' +
+        '<button type="button" class="ghost sm" data-act="msg" data-i="' + i + '">손님에게 메시지</button>' +
+        '<button type="button" class="ghost sm" data-act="noshow" data-i="' + i + '">노쇼 처리</button>' +
+        '<button type="button" class="ghost sm danger" data-act="cancel" data-i="' + i + '">주문 취소 · 환불</button>';
+    }
+    if (o.note) html += '<p class="small">' + o.note + '</p>';
+    html += '</div></div>';
+  }
+  body.innerHTML = html + '</div>';
+
+  var acts = body.querySelectorAll('[data-act]');
+  for (var a = 0; a < acts.length; a++) acts[a].onclick = function () {
+    var o = seller.orders[Number(this.getAttribute('data-i'))];
+    var act = this.getAttribute('data-act');
+    if (act === 'approve') { o.status = '결제 완료'; o.note = '손님이 승인해 에이전트 지갑에서 결제됐어요.'; seller.log.push(o.no + ' 결제 완료 · ' + won(o.sale)); }
+    if (act === 'reject') { o.status = '취소 · 환불'; o.note = '주문을 거절했어요. 결제 전이라 청구되지 않아요.'; restock(o); seller.log.push(o.no + ' 주문 거절'); }
+    if (act === 'pickup') { o.status = '픽업 완료'; o.note = '픽업 QR 확인 완료.'; seller.log.push(o.no + ' 픽업 완료'); }
+    if (act === 'noshow') { o.status = '노쇼'; o.note = '결제 조건에 따라 금액은 정산되고, 손님 에이전트 신뢰 점수가 낮아져요.'; seller.log.push(o.no + ' 노쇼 처리'); }
+    if (act === 'cancel') { o.status = '취소 · 환불'; o.refund = true; o.note = '손님 에이전트 지갑으로 ' + won(o.sale) + ' 즉시 환불했어요. 재고는 다시 판매 목록으로 돌아갔어요.'; restock(o); seller.log.push(o.no + ' 주문 취소 · ' + won(o.sale) + ' 환불'); }
+    if (act === 'msg') { o.note = '손님에게 보냄 · 준비 다 됐어요, 편하실 때 오세요.'; seller.log.push(o.no + ' 메시지 발송'); }
+    ownerDash();
+  };
 }
 
-function ownerSettled(res, total) {
-  var html = steps(OWNER_STEPS, 3) + '<h2>오늘 마감, 바로 정산됐어요</h2><div class="log">';
-  for (var i = 0; i < res.reservations.length; i++) {
-    var r = res.reservations[i];
-    html += '<p class="appear">' + r.buyer + ' 님 에이전트 지갑에서 ' + won(r.sale) + ' 결제 · 픽업 QR 발송</p>';
+function restock(o) {
+  for (var k = 0; k < seller.shop.items.length; k++) if (seller.shop.items[k].name === o.item) seller.shop.items[k].left++;
+  recalc();
+}
+
+// ③ 매출 · 정산
+function ownerSettle() {
+  var body = document.getElementById('tabBody');
+  var sales = 0, refund = 0, cnt = 0;
+  for (var i = 0; i < seller.orders.length; i++) {
+    var o = seller.orders[i];
+    if (o.status === '결제 완료' || o.status === '픽업 완료' || o.status === '노쇼') { sales += o.sale; cnt++; }
+    if (o.refund) refund += o.sale;
   }
-  var leftText = [];
-  for (var key in res.left) if (res.left[key] > 0) leftText.push(key + ' ' + res.left[key] + '개');
-  html += '<p class="done appear">총 ' + won(total) + ' 바로 정산 완료. 버려질 뻔한 상품이 매출이 됐어요.</p>' +
-    '<p class="appear">남은 상품: ' + (leftText.length ? leftText.join(', ') + ' · 다음 손님에게 계속 제안 중' : '없음') + '</p></div>' +
-    '<p class="small">노쇼면 결제 조건에 따라 자동 처리, 가게 사정으로 못 팔면 자동 환불됩니다.</p>' +
-    '<div class="actions" style="max-width:360px"><button type="button" class="ghost" id="againBtn">다른 가게로 해 보기</button><button type="button" class="primary" id="toBuyer">구매자 쪽도 보기</button></div>';
-  app.innerHTML = html;
-  document.getElementById('againBtn').onclick = ownerStart;
-  document.getElementById('toBuyer').onclick = buyerStart;
+  var left = [];
+  for (var k = 0; k < seller.shop.items.length; k++) if (seller.shop.items[k].left > 0) left.push(seller.shop.items[k].name + ' ' + seller.shop.items[k].left + '개');
+  var html = '<div class="kpis"><div><span class="small">오늘 마감 매출</span><b>' + won(sales) + '</b></div><div><span class="small">결제 건수</span><b>' + cnt + '건</b></div><div><span class="small">환불</span><b>' + won(refund) + '</b></div><div><span class="small">정산</span><b>바로 정산</b></div></div>' +
+    '<div class="slip"><h3>남은 재고</h3><p>' + (left.length ? left.join(', ') : '없음 · 오늘 마감 상품을 다 팔았어요') + '</p>' +
+    (left.length ? '<button type="button" class="primary" id="resend">남은 재고 10% 더 낮춰 다시 제안</button>' : '') + '</div>' +
+    '<div class="slip"><h3>오늘 기록</h3><div class="log">';
+  if (seller.log.length === 0) html += '<p>아직 기록이 없어요.</p>';
+  for (var l = seller.log.length - 1; l >= 0; l--) html += '<p>' + seller.log[l] + '</p>';
+  html += '</div><p class="small">결제는 손님 에이전트 지갑에서 바로 사장님께 정산돼요. 수수료는 팔린 건에만 붙어요.</p></div>';
+  body.innerHTML = html;
+  if (document.getElementById('resend')) document.getElementById('resend').onclick = function () {
+    for (var j = 0; j < seller.offers.length; j++) {
+      var it = seller.shop.items[j];
+      if (it.left <= 0) continue;
+      var floor = Math.round(it.price * seller.shop.floorRate / 100) * 100;
+      var next = Math.round(seller.offers[j].sale * 0.9 / 100) * 100;
+      it.manualSale = next < floor ? floor : next;
+    }
+    seller.log.push('남은 재고 가격 인하 후 다시 제안');
+    recalc();
+    ownerSend();
+  };
+}
+
+// ④ 가게 설정: 마감 시간, 최저가 비율, 자동 내보내기, 판매 중지
+function ownerSetting() {
+  var body = document.getElementById('tabBody');
+  body.innerHTML = '<form id="setShop" class="slip"><h3>가게 설정</h3>' +
+    '<div class="row"><label for="sClose">오늘 마감 시간</label><input id="sClose" type="time" value="' + seller.shop.closeAt + '"></div>' +
+    '<div class="row"><label for="sFloor">정가 대비 최저가 비율</label><span><input id="sFloor" type="number" min="10" max="100" step="5" value="' + Math.round(seller.shop.floorRate * 100) + '"> %</span></div>' +
+    '<div class="row"><label for="sAuto">마감 1시간 전 자동 내보내기</label><input id="sAuto" type="checkbox"' + (seller.autoSend ? ' checked' : '') + '></div>' +
+    '<div class="row"><label for="sOpen">오늘 마감 판매</label><select id="sOpen"><option value="1"' + (seller.open ? ' selected' : '') + '>판매 중</option><option value="0"' + (seller.open ? '' : ' selected') + '>오늘 판매 중지</option></select></div>' +
+    '<div class="row"><span>정산 계좌</span><b>에이전트 지갑 바로 정산 · 시연용</b></div>' +
+    '<button type="submit" class="primary">저장</button><p id="setMsg" class="done-msg" hidden>저장했어요. 마감 가격을 다시 계산했어요.</p></form>';
+  document.getElementById('setShop').onsubmit = function (e) {
+    e.preventDefault();
+    seller.shop.closeAt = document.getElementById('sClose').value || seller.shop.closeAt;
+    seller.shop.floorRate = (Number(document.getElementById('sFloor').value) || 50) / 100;
+    seller.autoSend = document.getElementById('sAuto').checked;
+    seller.open = document.getElementById('sOpen').value === '1';
+    seller.log.push('가게 설정 변경');
+    recalc();
+    ownerDash();
+    seller.tab = 'setting';
+    document.getElementById('setMsg') && (document.getElementById('setMsg').hidden = false);
+  };
 }
 
 // ───────── 구매자 흐름 ─────────

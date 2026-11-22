@@ -18,7 +18,7 @@ app.get('/api/health', (req, res) => {
 
 // 사장님 흐름: 남은 거 팔아줘 → 판매자 에이전트가 가격을 정하고 손님 에이전트들이 예약
 app.post('/api/seller', (req, res) => {
-  res.json(Engine.sellerFlow(req.body.shopId, req.body.now || '18:10'));
+  res.json(Engine.sellerFlow(req.body.shop || req.body.shopId, req.body.now || '18:10'));
 });
 
 // 구매자 흐름: 내 에이전트가 동네 마감 상품을 거르고 점수 매겨 고름
