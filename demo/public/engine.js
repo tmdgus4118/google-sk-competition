@@ -7,7 +7,7 @@
   // 동네 가게 예시 데이터 (시연용)
   var SHOPS = [
     {
-      id: 'banchan', name: '정다운 반찬', type: '반찬', closeAt: '20:00', detourMin: 3, x: 250, y: 120,
+      id: 'banchan', lat: 37.50725, lng: 127.0561, name: '정다운 반찬', type: '반찬', closeAt: '20:00', detourMin: 3, x: 250, y: 120,
       items: [
         { name: '멸치볶음 + 계란말이', price: 9000, left: 3, allergens: [] },
         { name: '잡채', price: 6000, left: 2, allergens: [] }
@@ -15,7 +15,7 @@
       floorRate: 0.55 // 정가의 55% 아래로는 안 팔기
     },
     {
-      id: 'bakery', name: '아침빵집', type: '빵', closeAt: '21:00', detourMin: 2, x: 400, y: 150,
+      id: 'bakery', lat: 37.50995, lng: 127.06045, name: '아침빵집', type: '빵', closeAt: '21:00', detourMin: 2, x: 400, y: 150,
       items: [
         { name: '소금빵 3개', price: 7500, left: 4, allergens: [] },
         { name: '땅콩 크림빵', price: 4000, left: 3, allergens: ['땅콩'] }
@@ -23,14 +23,14 @@
       floorRate: 0.5
     },
     {
-      id: 'mandu', name: '골목 손만두', type: '만두', closeAt: '19:30', detourMin: 9, x: 170, y: 60,
+      id: 'mandu', lat: 37.5029, lng: 127.0523, name: '골목 손만두', type: '만두', closeAt: '19:30', detourMin: 9, x: 170, y: 60,
       items: [
         { name: '고기만두 1판', price: 8000, left: 5, allergens: [] }
       ],
       floorRate: 0.6
     },
     {
-      id: 'gimbap', name: '역앞 김밥', type: '김밥', closeAt: '20:30', detourMin: 1, x: 350, y: 200,
+      id: 'gimbap', lat: 37.50805, lng: 127.064, name: '역앞 김밥', type: '김밥', closeAt: '20:30', detourMin: 1, x: 350, y: 200,
       items: [
         { name: '참치김밥 2줄', price: 9000, left: 4, allergens: [] },
         { name: '새우튀김김밥', price: 5500, left: 2, allergens: ['새우'] }
@@ -38,7 +38,7 @@
       floorRate: 0.5
     },
     {
-      id: 'tteok', name: '할머니 떡집', type: '떡', closeAt: '19:40', detourMin: 4, x: 420, y: 55,
+      id: 'tteok', lat: 37.5127, lng: 127.0585, name: '할머니 떡집', type: '떡', closeAt: '19:40', detourMin: 4, x: 420, y: 55,
       items: [
         { name: '인절미 한 팩', price: 5000, left: 3, allergens: [] }
       ],
@@ -48,9 +48,9 @@
 
   // 평소 퇴근길 (회사 → 지하철역 → 집) 지도 좌표 (시연용)
   var ROUTE = [
-    { x: 60, y: 230, label: '회사' },
-    { x: 310, y: 150, label: '지하철역' },
-    { x: 540, y: 95, label: '집' }
+    { x: 60, y: 230, label: '회사', lat: 37.50449, lng: 127.04898 },
+    { x: 310, y: 150, label: '삼성역', lat: 37.50887, lng: 127.06318 },
+    { x: 540, y: 95, label: '집', lat: 37.51430, lng: 127.06020 }
   ];
 
   // 지은 씨가 동의한 데이터로 만든 식습관 프로필 (시연용)

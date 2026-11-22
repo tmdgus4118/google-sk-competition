@@ -2,6 +2,13 @@
 // 서버가 있으면 /api 로 계산하고, 없으면(정적 호스팅) 브라우저에서 같은 엔진으로 계산합니다.
 
 var app = document.getElementById('app');
+// 화면을 바꿀 때마다 자리 잡아 둔 지도를 그립니다
+var appBox = app;
+app = {
+  set innerHTML(h) { appBox.innerHTML = h; flushMaps(); },
+  get innerHTML() { return appBox.innerHTML; },
+  querySelectorAll: function (q) { return appBox.querySelectorAll(q); }
+};
 var localUser = Engine.freshUser();
 var useServer = false;
 
@@ -169,7 +176,7 @@ function nearestOnRoute(px, py) {
 }
 
 // 평소 퇴근길과 가게 위치 약도. focusId가 있으면 그 가게로 빠지는 길을 강조합니다
-function mapSvg(ranked, focusId) {
+function svgMap(ranked, focusId) {
   var R = Engine.ROUTE;
   var svg = '<svg viewBox="0 0 600 270" class="map" role="img" aria-label="평소 퇴근길과 가게 위치">';
   svg += '<rect width="600" height="270" fill="#EFE7D6"/>';
@@ -230,7 +237,7 @@ function buyerStart() {
 
   app.innerHTML = steps(BUYER_STEPS, 0) +
     '<h2>지은 님의 평소 퇴근길</h2>' + mapSvg(null, null) +
-    '<p class="small">18:20 회사 출발 → 지하철역 → 19:05 집 도착 · 출퇴근 동선 데이터로 파악한 경로예요 · 숫자는 퇴근길에서 더 걸리는 시간</p>' +
+    '<p class="small">18:20 회사 출발 → 지하철역 → 19:05 집 도착 · 출퇴근 동선 데이터로 파악한 경로예요 · 숫자는 퇴근길에서 더 걸리는 시간 · 지도 OpenStreetMap</p>' +
     '<form id="setForm" class="slip appear" style="margin-top:16px"><h3>에이전트에게 맡긴 범위 · 연필을 눌러 고칠 수 있어요</h3>' +
     editRow('budget', '한 번에 결제 한도', won(st.budgetPerOrder), '<input id="budget" type="number" min="1000" step="500" value="' + st.budgetPerOrder + '"> 원') +
     editRow('detour', '퇴근길에서 돌아가도 되는 시간', st.maxDetourMin + '분까지', '<input id="detour" type="number" min="0" max="15" value="' + st.maxDetourMin + '"> 분') +
@@ -354,7 +361,7 @@ function buyerPaid(offer) {
     for (var s = 0; s < svcs.length; s++) {
       svcs[s].onclick = function () {
         var k = this.getAttribute('data-svc');
-        if (k === 'route') panel.innerHTML = routePanel(shop, offer);
+        if (k === 'route') panel.innerHTML = routePanel(shop, offer); flushMaps();
         if (k === 'time') {
           panel.innerHTML = '<h3>픽업 시간 변경</h3><p class="small">가게 마감 ' + offer.closeAt + ' 전까지 바꿀 수 있어요.</p>' +
             '<div class="row"><label for="newTime">새 픽업 시간</label><input id="newTime" type="time" value="19:05" max="' + offer.closeAt + '"></div>' +
@@ -395,6 +402,109 @@ function routePanel(shop, offer) {
   return '<h3>길찾기</h3>' + mapSvg(null, shop.id) +
     '<ol class="route-steps"><li>18:20 회사에서 출발</li><li>지하철역 근처에서 퇴근길을 벗어나 ' + offer.shopName + '로 · ' + offer.detourMin + '분</li><li>가게 앞에서 픽업 QR 보여 주기</li><li>다시 퇴근길로 돌아와 19:05쯤 집 도착</li></ol>' +
     '<p class="small">실제 서비스에서는 지도 앱 길안내와 연결됩니다.</p>';
+}
+
+
+// ───────── 실제 지도 (OpenStreetMap) ─────────
+// 지도 타일을 못 불러오는 환경에서는 위의 약도로 대신 보여 줍니다
+var pendingMaps = [];
+var mapCount = 0;
+
+function mapSvg(ranked, focusId) {
+  mapCount++;
+  var id = 'map' + mapCount;
+  pendingMaps.push({ id: id, ranked: ranked, focusId: focusId });
+  return '<div id="' + id + '" class="lmap" role="img" aria-label="퇴근길과 가게 위치 지도"></div>';
+}
+
+// 화면을 그린 뒤 자리만 잡아 둔 지도를 실제로 그립니다
+function flushMaps() {
+  var list = pendingMaps;
+  pendingMaps = [];
+  for (var i = 0; i < list.length; i++) drawMap(list[i]);
+}
+
+function shopColor(shop, ranked, focusId) {
+  if (focusId) return shop.id === focusId ? '#E2622B' : '#A9A291';
+  if (!ranked) return '#1F3D2E';
+  var state = 'out';
+  for (var k = 0; k < ranked.length; k++) {
+    if (ranked[k].offer.shopId !== shop.id || ranked[k].excluded) continue;
+    if (ranked[k].rank <= 3) state = 'top';
+    else if (state !== 'top') state = 'ok';
+  }
+  return state === 'top' ? '#E2622B' : (state === 'ok' ? '#2E5642' : '#A9A291');
+}
+
+function drawMap(m) {
+  var el = document.getElementById(m.id);
+  if (!el) return;
+  if (!window.L) { el.outerHTML = svgMap(m.ranked, m.focusId); return; }
+
+  var map = L.map(el, { scrollWheelZoom: false, attributionControl: true });
+  var tiles = L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+    maxZoom: 19, subdomains: 'abc', attribution: '&copy; OpenStreetMap'
+  }).addTo(map);
+  // 지도 타일이 막힌 환경이면 2.5초 뒤 약도로 바꿔 보여 줍니다
+  var tileOk = false;
+  tiles.on('tileload', function () { tileOk = true; });
+  setTimeout(function () {
+    if (tileOk || !document.getElementById(m.id)) return;
+    map.remove();
+    var box = document.getElementById(m.id);
+    if (box) box.outerHTML = svgMap(m.ranked, m.focusId);
+  }, 2500);
+
+  // 평소 퇴근길
+  var R = Engine.ROUTE;
+  var line = [];
+  for (var i = 0; i < R.length; i++) line.push([R[i].lat, R[i].lng]);
+  L.polyline(line, { color: '#1F3D2E', weight: 6, opacity: 0.85, dashArray: '2 10', lineCap: 'round' }).addTo(map);
+  for (var r = 0; r < R.length; r++) {
+    L.circleMarker([R[r].lat, R[r].lng], { radius: 8, color: '#FBF8F1', weight: 3, fillColor: '#1F3D2E', fillOpacity: 1 })
+      .addTo(map).bindTooltip(R[r].label, { permanent: true, direction: 'bottom', className: 'tip-route' });
+  }
+
+  // 가게 위치
+  var bounds = line.slice();
+  for (var j = 0; j < Engine.SHOPS.length; j++) {
+    var s = Engine.SHOPS[j];
+    var focus = s.id === m.focusId;
+    if (m.focusId && !focus) {
+      L.circleMarker([s.lat, s.lng], { radius: 7, color: '#FBF8F1', weight: 2, fillColor: '#A9A291', fillOpacity: 0.8 }).addTo(map);
+      continue;
+    }
+    if (focus) {
+      // 퇴근길에서 가게로 빠지는 길
+      var n = nearestLatLng(s.lat, s.lng);
+      L.polyline([[n.lat, n.lng], [s.lat, s.lng]], { color: '#E2622B', weight: 6, lineCap: 'round' }).addTo(map);
+    }
+    L.circleMarker([s.lat, s.lng], { radius: focus ? 13 : 10, color: '#FBF8F1', weight: 3, fillColor: shopColor(s, m.ranked, m.focusId), fillOpacity: 1 })
+      .addTo(map).bindTooltip(s.name + ' · ' + s.detourMin + '분', { permanent: true, direction: 'right', className: focus ? 'tip-focus' : 'tip-shop' });
+    bounds.push([s.lat, s.lng]);
+  }
+  map.fitBounds(bounds, { padding: [30, 30] });
+  if (m.focusId) {
+    for (var f = 0; f < Engine.SHOPS.length; f++) {
+      if (Engine.SHOPS[f].id === m.focusId) map.setView([Engine.SHOPS[f].lat, Engine.SHOPS[f].lng], 16);
+    }
+  }
+}
+
+// 퇴근길 위에서 가게와 가장 가까운 지점 (위도·경도)
+function nearestLatLng(lat, lng) {
+  var R = Engine.ROUTE;
+  var best = null;
+  for (var i = 0; i < R.length - 1; i++) {
+    var ax = R[i].lng, ay = R[i].lat, bx = R[i + 1].lng, by = R[i + 1].lat;
+    var t = ((lng - ax) * (bx - ax) + (lat - ay) * (by - ay)) / ((bx - ax) * (bx - ax) + (by - ay) * (by - ay));
+    if (t < 0) t = 0;
+    if (t > 1) t = 1;
+    var x = ax + (bx - ax) * t, y = ay + (by - ay) * t;
+    var d = (lng - x) * (lng - x) + (lat - y) * (lat - y);
+    if (!best || d < best.d) best = { lat: y, lng: x, d: d };
+  }
+  return best;
 }
 
 // 픽업 QR 모양 (시연용 무늬, 실제로 스캔되지 않습니다)
