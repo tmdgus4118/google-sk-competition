@@ -84,3 +84,15 @@ tr.top td { background: #E2EBE3; }
 .notice { background: #FBF8F1; border: 1px solid var(--line); border-left: 6px solid var(--orange); border-radius: 8px; padding: 14px 18px; margin: 0 0 20px; }
 .notice b { color: var(--orange-text); font-size: 15px; }
 .notice p { margin: 6px 0 0; font-size: 15px; line-height: 1.6; color: var(--soft); }
+
+.map { width: 100%; height: auto; border-radius: 12px; border: 1px solid var(--line); display: block; }
+.picks { display: grid; grid-template-columns: repeat(auto-fit, minmax(260px, 1fr)); gap: 14px; margin-top: 16px; }
+.pick { margin: 0; display: flex; flex-direction: column; }
+.pick .price { font-size: 26px; font-weight: 800; }
+.pick .was { color: #BDB6A6; text-decoration: line-through; font-size: 14px; }
+.pick .reasons li { border-top-color: #3A3732; }
+.pick button { margin-top: auto; }
+.pick .small { margin: 0 0 6px; }
+.chips.light label { background: var(--paper2); color: var(--ink); }
+.slip input[type=number], .slip input[type=time] { font: inherit; width: 110px; padding: 6px 8px; border: 1px solid var(--line); border-radius: 6px; background: #FFFDF8; text-align: right; }
+.slip .row { align-items: center; flex-wrap: wrap; }

@@ -22,6 +22,7 @@ function local(path, body) {
   if (path === 'seller') return Engine.sellerFlow(body.shopId, body.now);
   if (path === 'buyer') {
     if (body.reset) localUser = Engine.freshUser();
+    if (body.settings) applySettings(localUser, body.settings);
     var r = Engine.buyerFlow(localUser, body.now);
     r.user = localUser;
     return r;
@@ -124,63 +125,135 @@ function ownerSettled(res, total) {
 }
 
 // ───────── 구매자 흐름 ─────────
-var BUYER_STEPS = ['맡길 범위와 데이터', '에이전트가 고르기', '승인 한 번', '픽업'];
+var BUYER_STEPS = ['내 퇴근길과 맡길 범위', '에이전트 추천', '승인 한 번', '픽업'];
+var settings = null; // 사용자가 화면에서 고친 맡긴 범위
+
+function defaultSettings() {
+  var u = Engine.freshUser();
+  return { budgetPerOrder: u.budgetPerOrder, maxDetourMin: u.maxDetourMin, arriveAt: u.arriveAt,
+    avoid: u.avoid.slice(), data: { route: true, search: true, buy: true, pay: true } };
+}
+
+// 맡긴 범위를 엔진용 사용자 정보에 반영합니다
+function applySettings(user, st) {
+  user.budgetPerOrder = st.budgetPerOrder;
+  user.maxDetourMin = st.maxDetourMin;
+  user.arriveAt = st.arriveAt;
+  user.avoid = st.avoid;
+  // 검색·구매·결제 데이터를 모두 끄면 식습관을 모르니 모든 메뉴를 같은 점수로 봅니다
+  if (!st.data.search && !st.data.buy && !st.data.pay) {
+    for (var k in user.habits) user.habits[k] = 0.5;
+  }
+  return user;
+}
+
+// 평소 퇴근길과 가게 위치를 그린 지도 (시연용 약도)
+function mapSvg(ranked) {
+  var R = Engine.ROUTE;
+  var svg = '<svg viewBox="0 0 600 270" class="map" role="img" aria-label="평소 퇴근길과 마감 상품이 있는 가게 위치">';
+  svg += '<rect width="600" height="270" fill="#EFE7D6"/>';
+  for (var g = 1; g < 6; g++) svg += '<line x1="' + g * 100 + '" y1="0" x2="' + g * 100 + '" y2="270" stroke="#E2D8C3"/>';
+  svg += '<polyline points="' + R[0].x + ',' + R[0].y + ' ' + R[1].x + ',' + R[1].y + ' ' + R[2].x + ',' + R[2].y + '" fill="none" stroke="#1F3D2E" stroke-width="6" stroke-linecap="round" stroke-dasharray="2 12"/>';
+  for (var i = 0; i < R.length; i++) {
+    svg += '<circle cx="' + R[i].x + '" cy="' + R[i].y + '" r="8" fill="#1F3D2E"/>';
+    svg += '<text x="' + R[i].x + '" y="' + (R[i].y + 26) + '" text-anchor="middle" font-size="14" font-weight="700" fill="#1F3D2E">' + R[i].label + '</text>';
+  }
+  for (var j = 0; j < Engine.SHOPS.length; j++) {
+    var shop = Engine.SHOPS[j];
+    var state = 'none';
+    if (ranked) {
+      for (var k = 0; k < ranked.length; k++) {
+        if (ranked[k].offer.shopId !== shop.id) continue;
+        if (!ranked[k].excluded && ranked[k].rank <= 3) state = 'top';
+        else if (!ranked[k].excluded && state !== 'top') state = 'ok';
+        else if (state === 'none') state = 'out';
+      }
+    }
+    var color = state === 'top' ? '#E2622B' : (state === 'ok' ? '#2E5642' : (state === 'out' ? '#A9A291' : '#5A564C'));
+    svg += '<circle cx="' + shop.x + '" cy="' + shop.y + '" r="11" fill="' + color + '" stroke="#FBF8F1" stroke-width="3"/>';
+    svg += '<text x="' + (shop.x + 16) + '" y="' + (shop.y + 5) + '" font-size="13" fill="#1C1A17">' + shop.name + ' · ' + shop.detourMin + '분</text>';
+  }
+  svg += '</svg>';
+  var legend = ranked ? '<p class="small">주황 추천 3순위 안 · 녹색 후보 · 회색 제외 · 숫자는 퇴근길에서 더 걸리는 시간</p>' : '<p class="small">평소 퇴근길 18:20 회사 출발 → 19:05 집 도착 · 숫자는 퇴근길에서 더 걸리는 시간</p>';
+  return svg + legend;
+}
 
 function buyerStart() {
-  var u = Engine.freshUser();
+  if (!settings) settings = defaultSettings();
+  var st = settings;
+  var allergens = ['땅콩', '새우', '우유'];
+  var chk = '';
+  for (var i = 0; i < allergens.length; i++) {
+    chk += '<label><input type="checkbox" name="avoid" value="' + allergens[i] + '"' + (st.avoid.indexOf(allergens[i]) >= 0 ? ' checked' : '') + '> ' + allergens[i] + '</label>';
+  }
+  var dataNames = { route: '출퇴근 시간과 동선', search: '검색 기록', buy: '구매 이력', pay: '결제 이력' };
+  var dchk = '';
+  for (var key in dataNames) {
+    dchk += '<label><input type="checkbox" name="data" value="' + key + '"' + (st.data[key] ? ' checked' : '') + '> ' + dataNames[key] + '</label>';
+  }
   app.innerHTML = steps(BUYER_STEPS, 0) +
-    '<h2>지은 님이 에이전트에게 맡긴 것</h2>' +
-    '<div class="dark appear">' +
-    '<p class="small">쓸 데이터는 직접 고르고 언제든 끌 수 있어요</p>' +
-    '<div class="chips"><label><input type="checkbox" checked> 출퇴근 시간과 동선</label><label><input type="checkbox" checked> 검색 기록</label><label><input type="checkbox" checked> 구매 이력</label><label><input type="checkbox" checked> 결제 이력</label></div>' +
-    '<div class="slip" style="color:var(--ink);margin:12px 0 0"><h3>맡긴 범위</h3>' +
-    '<div class="row"><span>한 번에 결제 한도</span><b>' + won(u.budgetPerOrder) + '</b></div>' +
-    '<div class="row"><span>퇴근길에서 돌아가도 되는 시간</span><b>' + u.maxDetourMin + '분까지</b></div>' +
-    '<div class="row"><span>평소 도착 시간</span><b>' + u.arriveAt + '</b></div>' +
-    '<div class="row"><span>못 먹는 재료</span><b>' + u.avoid.join(', ') + '</b></div>' +
-    '<div class="row"><span>에이전트 지갑 이번 주 한도</span><b>' + won(u.wallet) + '</b></div>' +
-    '<div class="row"><span>파악된 식습관</span><b>반찬 90% · 빵 60% · 만두 50%</b></div></div></div>' +
-    '<button type="button" class="primary" id="goBtn">18:20 퇴근 시작</button>';
-  document.getElementById('goBtn').onclick = buyerRank;
+    '<h2>지은 님의 평소 퇴근길</h2>' + mapSvg(null) +
+    '<form id="setForm" class="slip appear" style="margin-top:16px"><h3>에이전트에게 맡긴 범위 · 직접 고칠 수 있어요</h3>' +
+    '<div class="row"><label for="budget">한 번에 결제 한도</label><span><input id="budget" type="number" min="1000" step="500" value="' + st.budgetPerOrder + '"> 원</span></div>' +
+    '<div class="row"><label for="detour">퇴근길에서 돌아가도 되는 시간</label><span><input id="detour" type="number" min="0" max="15" value="' + st.maxDetourMin + '"> 분까지</span></div>' +
+    '<div class="row"><label for="arrive">평소 도착 시간</label><span><input id="arrive" type="time" value="' + st.arriveAt + '"></span></div>' +
+    '<div class="row"><span>못 먹는 재료</span><span class="chips light">' + chk + '</span></div>' +
+    '<div class="row"><span>에이전트가 써도 되는 데이터</span><span class="chips light">' + dchk + '</span></div>' +
+    '<p class="small">검색, 구매, 결제 이력을 모두 끄면 식습관을 모르는 상태로 추천해요.</p>' +
+    '<button type="submit" class="primary" style="margin-top:10px">이 범위로 18:20 퇴근 시작</button></form>';
+  document.getElementById('setForm').onsubmit = function (e) {
+    e.preventDefault();
+    var avoid = [];
+    var a = app.querySelectorAll('input[name=avoid]');
+    for (var i = 0; i < a.length; i++) if (a[i].checked) avoid.push(a[i].value);
+    var data = {};
+    var d = app.querySelectorAll('input[name=data]');
+    for (var j = 0; j < d.length; j++) data[d[j].value] = d[j].checked;
+    settings = {
+      budgetPerOrder: Number(document.getElementById('budget').value) || 10000,
+      maxDetourMin: Number(document.getElementById('detour').value) || 0,
+      arriveAt: document.getElementById('arrive').value || '19:05',
+      avoid: avoid, data: data
+    };
+    buyerRank();
+  };
 }
 
 function buyerRank() {
-  api('buyer', { reset: true, now: '18:20' }).then(function (res) {
-    var html = steps(BUYER_STEPS, 1) + '<h2>동네 마감 상품 ' + res.offers.length + '개를 살펴봤어요</h2>' +
-      '<p class="lead">1단계 맡긴 범위로 거르고, 2단계 식습관 40 · 동선 25 · 할인 20 · 단골 15로 점수를 매겼어요.</p>' +
-      '<table><tr><th>가게</th><th>상품</th><th>마감가</th><th>결과</th><th>점수</th></tr>';
+  api('buyer', { reset: true, now: '18:20', settings: settings }).then(function (res) {
+    var rank = 0;
     for (var i = 0; i < res.ranked.length; i++) {
-      var r = res.ranked[i];
-      var cls = r.excluded ? 'out' : (i === 0 ? 'top' : '');
-      html += '<tr class="' + cls + ' appear"><td>' + r.offer.shopName + '</td><td>' + r.offer.item + '</td><td>' + won(r.offer.sale) + '</td><td>' + (r.excluded ? '제외 · ' + r.excluded : (i === 0 ? '1순위 추천' : '후보')) + '</td><td class="score">' + (r.excluded ? '-' : r.score) + '</td></tr>';
+      if (!res.ranked[i].excluded) { rank++; res.ranked[i].rank = rank; }
     }
-    html += '</table><button type="button" class="primary" id="nextBtn">1순위 확인하기</button>';
-    app.innerHTML = html;
-    document.getElementById('nextBtn').onclick = function () { buyerApprove(res); };
-  });
-}
+    var picks = [];
+    for (var k = 0; k < res.ranked.length && picks.length < 3; k++) if (!res.ranked[k].excluded) picks.push(res.ranked[k]);
 
-function buyerApprove(res) {
-  var top = res.ranked[0];
-  var o = top.offer;
-  var html = steps(BUYER_STEPS, 2) + '<div class="dark appear">' +
-    '<p class="small">18:21 · 지하철에서 받은 알림</p><h2 style="color:var(--paper)">퇴근길에 하나 잡아 뒀어요</h2>' +
-    '<div class="offer"><p class="small" style="margin:0">' + o.shopName + ' · 퇴근길에서 ' + o.detourMin + '분 더 · 마감 ' + o.closeAt + '</p>' +
-    '<p style="font-size:20px;font-weight:800;margin:4px 0">' + o.item + '</p>' +
-    '<span class="price">' + won(o.sale) + '</span><span class="was">' + won(o.price) + '</span>' +
-    '<ul class="reasons" aria-label="고른 이유">';
-  for (var i = 0; i < top.reasons.length; i++) {
-    var r = top.reasons[i];
-    html += '<li><span>' + r.label + '</span>' + r.text + '<em>+' + r.point + '</em></li>';
-  }
-  html += '</ul></div><p class="small">' + res.decision.message + ' · 지갑 잔액 ' + won(res.user.wallet) + '</p>' +
-    '<div class="actions"><button type="button" class="primary" id="payBtn">' + won(o.sale) + ' 결제 승인</button><button type="button" class="ghost" id="skipBtn">이번엔 건너뛰기</button></div></div>';
-  app.innerHTML = html;
-  document.getElementById('payBtn').onclick = function () { buyerPaid(o); };
-  document.getElementById('skipBtn').onclick = function () {
-    app.innerHTML = '<div class="dark appear"><h2 style="color:var(--paper)">건너뛰었어요</h2><p class="small">예약을 풀고 다른 손님에게 넘겼어요. 내일 퇴근길에 다시 찾아볼게요.</p><button type="button" class="primary" id="homeAgain">처음으로</button></div>';
-    document.getElementById('homeAgain').onclick = home;
-  };
+    var html = steps(BUYER_STEPS, 1) + '<h2>오늘 퇴근길 추천 ' + picks.length + '개</h2>' +
+      '<p class="lead">동네 마감 상품 ' + res.offers.length + '개를 맡긴 범위로 거르고, 식습관 40 · 동선 25 · 할인 20 · 단골 15로 점수를 매겼어요. 마음에 드는 걸 골라 승인하세요.</p>' +
+      mapSvg(res.ranked) + '<div class="picks">';
+    for (var p = 0; p < picks.length; p++) {
+      var r = picks[p], o = r.offer;
+      var dec = Engine.decide(r, res.user);
+      html += '<div class="dark pick appear"><p class="small">' + (p + 1) + '순위 · ' + o.shopName + ' · 퇴근길에서 ' + o.detourMin + '분 더 · 마감 ' + o.closeAt + '</p>' +
+        '<p style="font-size:19px;font-weight:800;margin:4px 0">' + o.item + '</p>' +
+        '<div><span class="price">' + won(o.sale) + '</span> <span class="was">' + won(o.price) + '</span> <span class="badge">' + r.score + '점</span></div>' +
+        '<ul class="reasons" aria-label="고른 이유">';
+      for (var q = 0; q < r.reasons.length; q++) html += '<li><span>' + r.reasons[q].label + '</span>' + r.reasons[q].text + '<em>+' + r.reasons[q].point + '</em></li>';
+      html += '</ul><p class="small">' + dec.message + '</p><button type="button" class="primary" data-pick="' + p + '">' + won(o.sale) + ' 결제 승인</button></div>';
+    }
+    if (picks.length === 0) html += '<p class="lead">맡긴 범위에 맞는 상품이 없어요. 범위를 넓혀 보세요.</p>';
+    html += '</div><h3 style="margin-top:24px">제외된 상품과 이유</h3><table><tr><th>가게</th><th>상품</th><th>이유</th></tr>';
+    for (var x = 0; x < res.ranked.length; x++) {
+      if (res.ranked[x].excluded) html += '<tr class="out"><td>' + res.ranked[x].offer.shopName + '</td><td>' + res.ranked[x].offer.item + '</td><td>' + res.ranked[x].excluded + '</td></tr>';
+    }
+    html += '</table><button type="button" class="ghost" id="editBtn">맡긴 범위 다시 고치기</button>';
+    app.innerHTML = html;
+    var btns = app.querySelectorAll('[data-pick]');
+    for (var b = 0; b < btns.length; b++) {
+      btns[b].onclick = function () { buyerPaid(picks[Number(this.getAttribute('data-pick'))].offer); };
+    }
+    document.getElementById('editBtn').onclick = buyerStart;
+  });
 }
 
 function buyerPaid(offer) {

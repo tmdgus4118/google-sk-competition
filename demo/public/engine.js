@@ -7,7 +7,7 @@
   // 동네 가게 예시 데이터 (시연용)
   var SHOPS = [
     {
-      id: 'banchan', name: '정다운 반찬', type: '반찬', closeAt: '20:00', detourMin: 3,
+      id: 'banchan', name: '정다운 반찬', type: '반찬', closeAt: '20:00', detourMin: 3, x: 250, y: 120,
       items: [
         { name: '멸치볶음 + 계란말이', price: 9000, left: 3, allergens: [] },
         { name: '잡채', price: 6000, left: 2, allergens: [] }
@@ -15,7 +15,7 @@
       floorRate: 0.55 // 정가의 55% 아래로는 안 팔기
     },
     {
-      id: 'bakery', name: '아침빵집', type: '빵', closeAt: '21:00', detourMin: 2,
+      id: 'bakery', name: '아침빵집', type: '빵', closeAt: '21:00', detourMin: 2, x: 400, y: 150,
       items: [
         { name: '소금빵 3개', price: 7500, left: 4, allergens: [] },
         { name: '땅콩 크림빵', price: 4000, left: 3, allergens: ['땅콩'] }
@@ -23,12 +23,34 @@
       floorRate: 0.5
     },
     {
-      id: 'mandu', name: '골목 손만두', type: '만두', closeAt: '19:30', detourMin: 9,
+      id: 'mandu', name: '골목 손만두', type: '만두', closeAt: '19:30', detourMin: 9, x: 170, y: 60,
       items: [
         { name: '고기만두 1판', price: 8000, left: 5, allergens: [] }
       ],
       floorRate: 0.6
+    },
+    {
+      id: 'gimbap', name: '역앞 김밥', type: '김밥', closeAt: '20:30', detourMin: 1, x: 350, y: 200,
+      items: [
+        { name: '참치김밥 2줄', price: 9000, left: 4, allergens: [] },
+        { name: '새우튀김김밥', price: 5500, left: 2, allergens: ['새우'] }
+      ],
+      floorRate: 0.5
+    },
+    {
+      id: 'tteok', name: '할머니 떡집', type: '떡', closeAt: '19:40', detourMin: 4, x: 470, y: 60,
+      items: [
+        { name: '인절미 한 팩', price: 5000, left: 3, allergens: [] }
+      ],
+      floorRate: 0.5
     }
+  ];
+
+  // 평소 퇴근길 (회사 → 지하철역 → 집) 지도 좌표 (시연용)
+  var ROUTE = [
+    { x: 60, y: 230, label: '회사' },
+    { x: 310, y: 150, label: '지하철역' },
+    { x: 540, y: 95, label: '집' }
   ];
 
   // 지은 씨가 동의한 데이터로 만든 식습관 프로필 (시연용)
@@ -38,8 +60,8 @@
     maxDetourMin: 5,            // 퇴근길에서 최대 몇 분까지 돌아가도 되나
     arriveAt: '19:05',          // 평소 퇴근 동선상 도착 시간
     avoid: ['땅콩'],            // 못 먹는 재료
-    habits: { '반찬': 0.9, '빵': 0.6, '만두': 0.5 }, // 검색·구매·결제 이력에서 본 선호도 0~1
-    visits: { banchan: 2, bakery: 0, mandu: 1 },     // 가게별 방문 횟수
+    habits: { '반찬': 0.9, '빵': 0.6, '만두': 0.5, '김밥': 0.7, '떡': 0.4 }, // 검색·구매·결제 이력에서 본 선호도 0~1
+    visits: { banchan: 2, bakery: 0, mandu: 1, gimbap: 4 },     // 가게별 방문 횟수
     recentItems: ['잡채'],      // 최근 사흘 안에 산 메뉴
     wallet: 30000               // 이번 주 에이전트 지갑 한도
   };
@@ -48,9 +70,9 @@
   var BUYERS = [
     USER,
     { name: '민수', budgetPerOrder: 8000, maxDetourMin: 4, arriveAt: '19:20', avoid: [],
-      habits: { '반찬': 0.3, '빵': 0.9, '만두': 0.7 }, visits: { bakery: 3 }, recentItems: [], wallet: 20000 },
+      habits: { '반찬': 0.3, '빵': 0.9, '만두': 0.7, '김밥': 0.6, '떡': 0.5 }, visits: { bakery: 3 }, recentItems: [], wallet: 20000 },
     { name: '하린', budgetPerOrder: 12000, maxDetourMin: 6, arriveAt: '18:50', avoid: [],
-      habits: { '반찬': 0.7, '빵': 0.4, '만두': 0.9 }, visits: { banchan: 1, mandu: 2 }, recentItems: [], wallet: 25000 }
+      habits: { '반찬': 0.7, '빵': 0.4, '만두': 0.9, '김밥': 0.5, '떡': 0.8 }, visits: { banchan: 1, mandu: 2 }, recentItems: [], wallet: 25000 }
   ];
 
   // 추천 점수 비율
@@ -199,7 +221,7 @@
   // 데모를 처음 상태로 돌리기 위한 복사본
   function freshUser() { return JSON.parse(JSON.stringify(USER)); }
 
-  var api = { SHOPS: SHOPS, BUYERS: BUYERS, sellerFlow: sellerFlow, buyerFlow: buyerFlow, freshUser: freshUser, WEIGHTS: WEIGHTS, priceOffers: priceOffers, rankOffers: rankOffers, decide: decide, pay: pay };
+  var api = { ROUTE: ROUTE, SHOPS: SHOPS, BUYERS: BUYERS, sellerFlow: sellerFlow, buyerFlow: buyerFlow, freshUser: freshUser, WEIGHTS: WEIGHTS, priceOffers: priceOffers, rankOffers: rankOffers, decide: decide, pay: pay };
 
   if (typeof module !== 'undefined' && module.exports) module.exports = api; // Node
   else root.Engine = api;                                                     // 브라우저

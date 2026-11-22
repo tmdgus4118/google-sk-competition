@@ -24,6 +24,7 @@ app.post('/api/seller', (req, res) => {
 // 구매자 흐름: 내 에이전트가 동네 마감 상품을 거르고 점수 매겨 고름
 app.post('/api/buyer', (req, res) => {
   if (req.body.reset) user = Engine.freshUser();
+  if (req.body.settings) applySettings(user, req.body.settings);
   const result = Engine.buyerFlow(user, req.body.now || '18:20');
   result.user = user;
   res.json(result);
@@ -33,6 +34,17 @@ app.post('/api/buyer', (req, res) => {
 app.post('/api/pay', (req, res) => {
   res.json(Engine.pay(req.body.offer, user));
 });
+
+// 화면에서 고친 맡긴 범위를 반영합니다
+function applySettings(u, st) {
+  u.budgetPerOrder = st.budgetPerOrder;
+  u.maxDetourMin = st.maxDetourMin;
+  u.arriveAt = st.arriveAt;
+  u.avoid = st.avoid;
+  if (!st.data.search && !st.data.buy && !st.data.pay) {
+    for (const k in u.habits) u.habits[k] = 0.5;
+  }
+}
 
 const port = process.env.PORT || 3000;
 app.listen(port, () => console.log('퇴근길 마감 데모: http://localhost:' + port));
