@@ -1,0 +1,86 @@
+/* 발표자료와 같은 색: 시장 차양의 녹색, 가격표 주황, 종이 미색 */
+:root {
+  --green: #1F3D2E; --green-soft: #2E5642; --paper: #F5EFE3; --paper2: #EAE1CE;
+  --ink: #1C1A17; --soft: #5A564C; --line: #D3C8B1; --orange: #E2622B; --orange-text: #B54A1B;
+  --ease: cubic-bezier(0.23, 1, 0.32, 1);
+}
+* { box-sizing: border-box; }
+body { margin: 0; background: var(--paper); color: var(--ink);
+  font-family: 'Pretendard', 'Noto Sans KR', 'Apple SD Gothic Neo', 'Noto Sans CJK KR', sans-serif; }
+header.top { background: var(--green); color: var(--paper); padding: 18px 24px; display: flex; justify-content: space-between; align-items: center; }
+header.top b { font-size: 20px; }
+header.top button { background: transparent; color: var(--paper); border: 1px solid #6E8C7B; }
+main { max-width: 980px; margin: 0 auto; padding: 32px 20px 64px; }
+h1 { font-size: 40px; line-height: 1.2; margin: 0 0 12px; color: var(--green); }
+h2 { font-size: 26px; margin: 0 0 6px; color: var(--green); }
+p.lead { font-size: 18px; color: var(--soft); line-height: 1.6; margin: 0 0 28px; }
+.small { font-size: 14px; color: var(--soft); }
+
+button { font: inherit; border: 0; border-radius: 10px; padding: 12px 16px; cursor: pointer;
+  transition: transform 140ms var(--ease), background-color 200ms var(--ease); }
+button:active { transform: scale(0.97); }
+button:focus-visible { outline: 3px solid var(--orange); outline-offset: 3px; }
+button:disabled { background: var(--paper2); color: var(--soft); cursor: default; transform: none; }
+.primary { background: var(--orange); color: var(--ink); font-weight: 800; font-size: 17px; }
+.ghost { background: transparent; border: 1px solid var(--line); color: var(--ink); }
+
+/* 시작 화면: 역할 선택 */
+.roles { display: grid; grid-template-columns: 1fr 1fr; gap: 20px; }
+.role { text-align: left; padding: 28px; border-radius: 14px; display: block; width: 100%; }
+.role.owner { background: var(--green); color: var(--paper); }
+.role.buyer { background: var(--ink); color: var(--paper); }
+.role .who { font-size: 14px; opacity: 0.8; display: block; margin-bottom: 8px; }
+.role .title { font-size: 26px; font-weight: 800; display: block; margin-bottom: 10px; }
+.role .desc { font-size: 15px; line-height: 1.6; opacity: 0.9; display: block; }
+
+/* 단계 표시 */
+.steps { display: flex; gap: 8px; margin: 0 0 22px; flex-wrap: wrap; }
+.steps span { font-size: 13px; padding: 6px 10px; border-radius: 999px; background: var(--paper2); color: var(--soft); }
+.steps span.on { background: var(--green); color: var(--paper); }
+
+/* 전표 */
+.slip { background: #FBF8F1; border: 1px solid var(--line); padding: 18px; margin: 0 0 18px; }
+.slip h3 { font-size: 14px; color: var(--orange-text); margin: 0 0 10px; }
+.row { display: flex; justify-content: space-between; gap: 12px; padding: 9px 0; font-size: 16px; }
+.row + .row { border-top: 1px dashed var(--line); }
+.row .old { color: var(--soft); text-decoration: line-through; margin-right: 8px; font-size: 14px; }
+.row b { font-variant-numeric: tabular-nums; }
+.say { background: var(--green-soft); color: var(--paper); border-radius: 14px 14px 4px 14px; padding: 12px 14px; max-width: 520px; margin: 0 0 16px auto; }
+
+/* 표 */
+table { width: 100%; border-collapse: collapse; margin: 0 0 18px; font-size: 15px; }
+th, td { text-align: left; padding: 10px 8px; border-bottom: 1px solid var(--line); vertical-align: top; }
+th { font-size: 13px; color: var(--soft); }
+td.score { font-weight: 800; color: var(--green); font-variant-numeric: tabular-nums; }
+tr.out td { color: #8C877B; }
+tr.top td { background: #E2EBE3; }
+
+/* 구매자 카드 */
+.dark { background: var(--ink); color: var(--paper); border-radius: 16px; padding: 22px; margin: 0 0 18px; }
+.dark .small { color: #BDB6A6; }
+.offer { background: var(--paper); color: var(--ink); border-radius: 12px; padding: 16px; margin: 14px 0; }
+.offer .price { font-size: 28px; font-weight: 800; }
+.offer .was { color: var(--soft); text-decoration: line-through; margin-left: 8px; font-size: 15px; }
+.reasons { list-style: none; padding: 0; margin: 10px 0 0; font-size: 14px; }
+.reasons li { padding: 6px 0; border-top: 1px solid var(--line); display: flex; gap: 10px; }
+.reasons li span { color: var(--orange-text); font-weight: 700; width: 48px; flex-shrink: 0; }
+.reasons li em { margin-left: auto; font-style: normal; color: var(--soft); }
+.chips { display: flex; flex-wrap: wrap; gap: 8px; margin: 10px 0; }
+.chips label { font-size: 14px; background: #2B2925; padding: 6px 10px; border-radius: 999px; }
+.actions { display: flex; flex-direction: column; gap: 10px; }
+.dark .ghost { color: var(--paper); border-color: #5A564C; }
+
+.log p { margin: 0; padding: 8px 0; border-top: 1px solid var(--line); font-size: 15px; }
+.log p.done { color: var(--green); font-weight: 700; }
+.qr { width: 150px; height: 150px; background: var(--paper); padding: 10px; border-radius: 10px; margin: 12px 0; }
+.qr svg { width: 100%; height: 100%; display: block; }
+.badge { font-size: 12px; background: var(--paper2); color: var(--soft); padding: 4px 8px; border-radius: 6px; }
+
+.appear { animation: appear 240ms var(--ease) both; }
+@keyframes appear { from { opacity: 0; transform: translateY(8px); } to { opacity: 1; transform: none; } }
+@media (prefers-reduced-motion: reduce) { .appear { animation: none; } button { transition: none; } }
+@media (max-width: 720px) { .roles { grid-template-columns: 1fr; } h1 { font-size: 30px; } }
+
+.notice { background: #FBF8F1; border: 1px solid var(--line); border-left: 6px solid var(--orange); border-radius: 8px; padding: 14px 18px; margin: 0 0 20px; }
+.notice b { color: var(--orange-text); font-size: 15px; }
+.notice p { margin: 6px 0 0; font-size: 15px; line-height: 1.6; color: var(--soft); }

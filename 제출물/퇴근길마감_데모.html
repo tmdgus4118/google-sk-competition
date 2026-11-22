@@ -1,0 +1,330 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>퇴근길 마감 데모 · 팀 페이즈</title>
+<style>
+  /* 색과 서체는 발표자료와 같은 값을 씁니다 */
+  :root {
+    --green: #1F3D2E;
+    --green-soft: #2E5642;
+    --paper: #F5EFE3;
+    --paper2: #EAE1CE;
+    --ink: #1C1A17;
+    --soft: #5A564C;
+    --line: #D3C8B1;
+    --orange: #E2622B;
+    --orange-text: #B54A1B;
+    --ease: cubic-bezier(0.23, 1, 0.32, 1);
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0;
+    background: var(--paper2);
+    color: var(--ink);
+    font-family: 'Pretendard', 'Noto Sans KR', 'Noto Sans CJK KR', 'Apple SD Gothic Neo', sans-serif;
+  }
+  .stage {
+    display: flex;
+    gap: 48px;
+    justify-content: center;
+    align-items: flex-start;
+    padding: 40px 24px 64px;
+    flex-wrap: wrap;
+  }
+  .who {
+    font-size: 15px;
+    font-weight: 700;
+    color: var(--soft);
+    margin: 0 0 10px 4px;
+  }
+  .screen {
+    width: 390px;
+    height: 760px;
+    border-radius: 20px;
+    overflow: hidden;
+    display: flex;
+    flex-direction: column;
+  }
+
+  /* 사장님 화면: 주문 전표처럼 */
+  .owner { background: var(--paper); border: 1px solid var(--line); }
+  .owner-top {
+    background: var(--green);
+    color: var(--paper);
+    padding: 22px 22px 18px;
+  }
+  .owner-top .shop { font-size: 22px; font-weight: 800; margin: 0; }
+  .owner-top .clock { font-size: 14px; color: #CFE0D4; margin: 6px 0 0; }
+  .owner-body { flex: 1; padding: 18px 22px; overflow: hidden; }
+  .say {
+    background: var(--green-soft);
+    color: var(--paper);
+    border-radius: 14px 14px 4px 14px;
+    padding: 12px 14px;
+    font-size: 16px;
+    line-height: 1.5;
+    margin: 0 0 14px auto;
+    max-width: 85%;
+  }
+  .slip {
+    background: #FBF8F1;
+    border: 1px solid var(--line);
+    padding: 16px;
+  }
+  .slip-title { font-size: 13px; font-weight: 700; color: var(--orange-text); margin: 0 0 10px; }
+  .row { display: flex; justify-content: space-between; font-size: 16px; padding: 7px 0; }
+  .row + .row { border-top: 1px dashed var(--line); }
+  .row .old { color: var(--soft); text-decoration: line-through; margin-right: 8px; font-size: 14px; }
+  .row b { font-variant-numeric: tabular-nums; }
+  .why { font-size: 13px; color: var(--soft); line-height: 1.55; margin: 10px 0 0; }
+  .floor {
+    display: flex; justify-content: space-between; align-items: center;
+    font-size: 14px; margin: 14px 0 0; padding: 10px 0; border-top: 1px solid var(--line);
+  }
+  .floor label { color: var(--soft); }
+  .floor input {
+    width: 96px; font: inherit; font-weight: 700; text-align: right;
+    border: 1px solid var(--line); border-radius: 6px; padding: 6px 8px; background: #FFFDF8;
+  }
+  .status { font-size: 14px; line-height: 1.6; margin: 14px 0 0; }
+  .status p { margin: 0; padding: 6px 0; border-top: 1px solid var(--line); }
+  .status .done { color: var(--green); font-weight: 700; }
+
+  /* 사용자 화면: 승인 한 번에 집중 */
+  .buyer { background: var(--ink); color: var(--paper); }
+  .buyer-top { padding: 22px 22px 8px; }
+  .buyer-top .hi { font-size: 14px; color: #BDB6A6; margin: 0; }
+  .buyer-top h1 { font-size: 24px; line-height: 1.35; margin: 6px 0 0; font-weight: 800; }
+  .offer {
+    margin: 16px 16px 0;
+    background: var(--paper);
+    color: var(--ink);
+    border-radius: 16px;
+    padding: 18px;
+  }
+  .offer .shop { font-size: 14px; color: var(--soft); margin: 0; }
+  .offer .item { font-size: 20px; font-weight: 800; margin: 4px 0 10px; }
+  .price { display: flex; align-items: baseline; gap: 10px; }
+  .price .now { font-size: 30px; font-weight: 800; font-variant-numeric: tabular-nums; }
+  .price .was { font-size: 15px; color: var(--soft); text-decoration: line-through; }
+  .reasons { list-style: none; margin: 14px 0 0; padding: 0; font-size: 14px; line-height: 1.5; }
+  .reasons li { padding: 7px 0; border-top: 1px solid var(--line); display: flex; gap: 10px; }
+  .reasons li span { color: var(--orange-text); font-weight: 700; width: 34px; flex-shrink: 0; }
+  .mandate { font-size: 13px; color: #BDB6A6; margin: 14px 22px 0; line-height: 1.6; }
+  .actions { margin-top: auto; padding: 16px; display: flex; flex-direction: column; gap: 10px; }
+
+  button {
+    font: inherit;
+    border: 0;
+    cursor: pointer;
+    transition: transform 140ms var(--ease), background-color 200ms var(--ease);
+  }
+  button:active { transform: scale(0.97); }
+  button:disabled { background: var(--paper2); color: var(--soft); cursor: default; transform: none; }
+  button:focus-visible { outline: 3px solid var(--orange); outline-offset: 3px; }
+  .primary {
+    background: var(--orange); color: var(--ink);
+    font-size: 18px; font-weight: 800; padding: 16px; border-radius: 12px; width: 100%;
+  }
+  .ghost {
+    background: transparent; color: inherit; border: 1px solid currentColor;
+    font-size: 15px; padding: 12px; border-radius: 12px; width: 100%; opacity: 0.8;
+  }
+  .owner .actions { padding: 0 22px 22px; }
+
+  .waiting { margin: auto 22px; text-align: center; color: #BDB6A6; font-size: 15px; line-height: 1.6; }
+  .qr {
+    margin: 18px auto 0; width: 168px; height: 168px; background: var(--paper);
+    padding: 12px; border-radius: 12px;
+  }
+  .qr svg { width: 100%; height: 100%; display: block; }
+  .done-text { text-align: center; margin: 14px 22px 0; font-size: 15px; line-height: 1.6; color: #E6DFD0; }
+  .point { color: #F2A27A; font-weight: 700; }
+
+  .appear { animation: appear 240ms var(--ease) both; }
+  @keyframes appear { from { opacity: 0; transform: translateY(8px); } to { opacity: 1; transform: none; } }
+  @media (prefers-reduced-motion: reduce) { .appear { animation: none; } button { transition: none; } }
+  .hidden { display: none !important; }
+
+  .note { text-align: center; font-size: 13px; color: var(--soft); margin: 0 0 32px; }
+</style>
+</head>
+<body>
+
+<div class="stage">
+
+  <!-- 왼쪽: 사장님 화면 -->
+  <div>
+    <p class="who">사장님 화면</p>
+    <div class="screen owner" id="ownerScreen">
+      <div class="owner-top">
+        <p class="shop">정다운 반찬</p>
+        <p class="clock">오늘 마감 20:00 · 지금 18:10</p>
+      </div>
+      <div class="owner-body">
+        <p class="say">남은 거 팔아줘. 멸치볶음 4개, 계란말이 3개 남았어</p>
+
+        <div class="slip">
+          <p class="slip-title">에이전트가 정한 마감 묶음</p>
+          <div class="row"><span>멸치볶음 + 계란말이</span><span><span class="old">9,000</span><b>6,500원</b></span></div>
+          <div class="row"><span>묶음 수</span><b>3세트</b></div>
+          <div class="row"><span>남는 멸치볶음 1개</span><span><span class="old">4,500</span><b>3,000원</b></span></div>
+          <p class="why">마감까지 1시간 50분, 근처 퇴근 동선이 몰리는 19시 전에 팔리도록 정가보다 낮췄어요.</p>
+        </div>
+
+        <div class="floor">
+          <label for="floorPrice">이 아래로는 안 팔기</label>
+          <input id="floorPrice" type="text" inputmode="numeric" value="5,000원" autocomplete="off">
+        </div>
+
+        <div class="status" id="ownerStatus" aria-live="polite"></div>
+      </div>
+      <div class="actions">
+        <button class="primary" id="sendBtn" type="button">이 가격으로 내보내기</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- 오른쪽: 사용자 화면 -->
+  <div>
+    <p class="who">지은 씨 화면</p>
+    <div class="screen buyer" id="buyerScreen">
+
+      <!-- 1. 기다리는 상태 -->
+      <div id="buyerWait" class="waiting">
+        퇴근 중이에요.<br>맡겨 둔 조건에 맞는 반찬이 생기면<br>에이전트가 알려 드려요.
+      </div>
+
+      <!-- 2. 승인 요청 상태 -->
+      <div id="buyerAsk" class="hidden" style="display:flex;flex-direction:column;height:100%;">
+        <div class="buyer-top">
+          <p class="hi">18:20 · 지하철 2호선</p>
+          <h1>퇴근길에 반찬 하나<br>잡아 뒀어요</h1>
+        </div>
+        <div class="offer appear">
+          <p class="shop">정다운 반찬 · 퇴근길에서 3분 더</p>
+          <p class="item">멸치볶음 + 계란말이</p>
+          <div class="price"><span class="now">6,500원</span><span class="was">9,000원</span></div>
+          <ul class="reasons" aria-label="고른 이유">
+            <li><span>취향</span>지난주 계란말이를 다시 사셨어요</li>
+            <li><span>동선</span>19:05 도착, 가게는 20:00 마감</li>
+            <li><span>한도</span>맡기신 1만 원 안이에요</li>
+            <li><span>단골</span>세 번째 방문, 포인트가 쌓여요</li>
+          </ul>
+        </div>
+        <p class="mandate">에이전트 지갑 · 이번 주 3만 원 중 남은 23,500원<br>맡긴 범위 · 한 번에 1만 원까지, 퇴근길 500m 안, 반찬과 빵만</p>
+        <div class="actions">
+          <button class="primary" id="approveBtn" type="button">6,500원 결제 승인</button>
+          <button class="ghost" id="skipBtn" type="button">이번엔 건너뛰기</button>
+        </div>
+      </div>
+
+      <!-- 3. 결제 완료 상태 -->
+      <div id="buyerDone" class="hidden" style="flex-direction:column;height:100%;">
+        <div class="buyer-top">
+          <p class="hi">결제 완료 · 정다운 반찬</p>
+          <h1>19:05에 가게 앞에서<br>보여 주세요</h1>
+        </div>
+        <div class="qr appear" aria-label="픽업 QR 코드" role="img">
+          <svg viewBox="0 0 21 21" id="qrSvg"></svg>
+        </div>
+        <p class="done-text">에이전트 지갑에서 6,500원 결제 · 사장님 바로 정산<br>안 찾아가면 자동 처리, 가게 사정이면 자동 환불<br><span class="point">단골 포인트 65P 적립</span></p>
+      </div>
+
+    </div>
+  </div>
+
+</div>
+<p class="note">시연용 화면입니다. 가게 이름과 가격은 예시입니다.</p>
+
+<script>
+  // 화면 요소를 미리 찾아 둡니다
+  var sendBtn = document.getElementById('sendBtn');
+  var approveBtn = document.getElementById('approveBtn');
+  var skipBtn = document.getElementById('skipBtn');
+  var ownerStatus = document.getElementById('ownerStatus');
+  var buyerWait = document.getElementById('buyerWait');
+  var buyerAsk = document.getElementById('buyerAsk');
+  var buyerDone = document.getElementById('buyerDone');
+
+  // 사장님 화면 아래에 상태 한 줄을 추가합니다
+  function addStatus(text, isDone) {
+    var p = document.createElement('p');
+    p.className = isDone ? 'done appear' : 'appear';
+    p.textContent = text;
+    ownerStatus.appendChild(p);
+  }
+
+  // 사용자 화면을 세 상태 중 하나로 바꿉니다
+  function showBuyer(state) {
+    buyerWait.classList.add('hidden');
+    buyerAsk.classList.add('hidden');
+    buyerDone.classList.add('hidden');
+    if (state === 'wait') buyerWait.classList.remove('hidden');
+    if (state === 'ask') buyerAsk.classList.remove('hidden');
+    if (state === 'done') { buyerDone.classList.remove('hidden'); buyerDone.style.display = 'flex'; }
+  }
+
+  // 1. 사장님이 내보내기를 누르면 제안이 나가고, 지은 씨 에이전트가 고릅니다
+  sendBtn.addEventListener('click', function () {
+    sendBtn.disabled = true;
+    sendBtn.textContent = '내보냈어요';
+    addStatus('근처 구매자 에이전트에게 제안을 보냈어요', false);
+    setTimeout(function () {
+      addStatus('지은 님 에이전트가 1세트를 잡았어요 · 승인 기다리는 중', false);
+      showBuyer('ask');
+    }, 700);
+  });
+
+  // 2. 지은 씨가 승인하면 결제와 픽업 QR이 나옵니다
+  approveBtn.addEventListener('click', function () {
+    showBuyer('done');
+    addStatus('6,500원 바로 정산 완료 · 19:05 픽업 예정', true);
+  });
+
+  // 3. 건너뛰면 예약을 풀고 다른 손님에게 넘깁니다
+  skipBtn.addEventListener('click', function () {
+    showBuyer('wait');
+    addStatus('지은 님이 건너뛰어 다른 손님에게 다시 제안해요', false);
+  });
+
+  // 픽업 QR 모양을 그립니다. 실제 QR이 아니라 시연용 무늬입니다
+  function drawQr() {
+    var svg = document.getElementById('qrSvg');
+    var html = '';
+    for (var y = 0; y < 21; y++) {
+      for (var x = 0; x < 21; x++) {
+        var corner = (x < 7 && y < 7) || (x > 13 && y < 7) || (x < 7 && y > 13);
+        var on = false;
+        if (corner) {
+          var cx = x > 13 ? x - 14 : x;
+          var cy = y > 13 ? y - 14 : y;
+          on = cx === 0 || cx === 6 || cy === 0 || cy === 6 || (cx > 1 && cx < 5 && cy > 1 && cy < 5);
+        } else {
+          on = ((x * 7 + y * 13 + x * y) % 5) < 2;
+        }
+        if (on) html += '<rect x="' + x + '" y="' + y + '" width="1" height="1" fill="#1C1A17"/>';
+      }
+    }
+    svg.innerHTML = html;
+  }
+  drawQr();
+  showBuyer('wait');
+
+  // 주소 끝에 #ask 또는 #done 을 붙이면 그 상태로 바로 엽니다 (발표 캡처용)
+  if (location.hash === '#ask' || location.hash === '#done') {
+    sendBtn.disabled = true;
+    sendBtn.textContent = '내보냈어요';
+    addStatus('근처 구매자 에이전트에게 제안을 보냈어요', false);
+    addStatus('지은 님 에이전트가 1세트를 잡았어요 · 승인 기다리는 중', false);
+    showBuyer('ask');
+    if (location.hash === '#done') {
+      showBuyer('done');
+      addStatus('6,500원 바로 정산 완료 · 19:05 픽업 예정', true);
+    }
+  }
+</script>
+</body>
+</html>

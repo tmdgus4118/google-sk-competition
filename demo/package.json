@@ -1,0 +1,12 @@
+{
+  "name": "toegeungil-magam-demo",
+  "version": "1.0.0",
+  "description": "퇴근길 마감 · 팀 페이즈 데모 (Future Commerce Challenge)",
+  "main": "server.js",
+  "scripts": {
+    "start": "node server.js"
+  },
+  "dependencies": {
+    "express": "^4.19.2"
+  }
+}
